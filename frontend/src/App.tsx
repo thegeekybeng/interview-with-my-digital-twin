@@ -10,6 +10,71 @@ interface Message {
   text: string;
 }
 
+function parseInlineStyles(text: string): React.ReactNode[] {
+  const boldParts = text.split(/(\*\*.*?\*\*)/g);
+  return boldParts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="markdown-strong">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+function parseMarkdown(text: string): React.ReactNode {
+  if (!text) return null;
+  const parts = text.split(/(```[\s\S]*?```)/g);
+
+  return (
+    <div className="markdown-content">
+      {parts.map((part, index) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+          const lang = match ? match[1] : '';
+          const code = match ? match[2].trim() : part.slice(3, -3).trim();
+          return (
+            <div key={index} className="code-block-container">
+              {lang && <div className="code-block-lang">{lang}</div>}
+              <pre className="code-block-pre">
+                <code className="code-block-code">{code}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        const lines = part.split('\n');
+        return (
+          <div key={index}>
+            {lines.map((line, lineIndex) => {
+              if (line.startsWith('### ')) {
+                return <h3 key={lineIndex} className="markdown-h3">{parseInlineStyles(line.slice(4))}</h3>;
+              }
+              if (line.startsWith('## ')) {
+                return <h2 key={lineIndex} className="markdown-h2">{parseInlineStyles(line.slice(3))}</h2>;
+              }
+              if (line.startsWith('- ')) {
+                return (
+                  <ul key={lineIndex} className="markdown-ul">
+                    <li className="markdown-li">{parseInlineStyles(line.slice(2))}</li>
+                  </ul>
+                );
+              }
+              if (line.trim() === '') {
+                return <div key={lineIndex} className="markdown-br" />;
+              }
+              return (
+                <p key={lineIndex} className="markdown-p">
+                  {parseInlineStyles(line)}
+                </p>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
 export default function App() {
   // Visitor Info State
   const [name, setName] = useState('');
@@ -451,72 +516,110 @@ export default function App() {
     );
   }
 
-  // 3. Main Chat Interface
+  // 3. Main Widescreen Dashboard Interface
   return (
-    <div className="w-[850px] h-[650px] glass-panel flex flex-col overflow-hidden animate-fade-in">
-      {/* Header bar */}
-      <div className="p-4 border-b border-white/5 flex justify-between items-center bg-slate-950/40">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <div>
-            <h2 className="text-sm font-bold">Andrew Yeo Digital Twin</h2>
-            <p className="text-xs text-slate-400 flex items-center gap-1">
-              Access: <span className={accessTier === 'FULL' ? 'text-blue-400 font-semibold' : 'text-amber-500'}>{accessTier} Access</span>
-            </p>
-          </div>
+    <div className="app-container glass-panel animate-fade-in">
+      {/* Sidebar Panel */}
+      <div className="sidebar">
+        <div className="flex items-center gap-2 mb-6">
+          <Sparkles className="w-5 h-5 text-blue-400" />
+          <h2 className="text-sm font-bold text-white">Andrew Yeo Twin</h2>
         </div>
-        <button onClick={handleLogout} className="text-slate-400 hover:text-white p-2 hover:bg-white/5 rounded-lg transition-colors">
-          <LogOut className="w-4 h-4" />
+
+        <div className="flex-1 space-y-4">
+          <div className="p-3 bg-slate-950/40 rounded-lg border border-white/5">
+            <span className="text-xs text-slate-400 block mb-1">Visitor</span>
+            <span className="text-sm font-semibold text-white block">{name || 'Guest User'}</span>
+            <span className="text-xs text-slate-400 block">{company || 'Independent'}</span>
+          </div>
+
+          <div className="p-3 bg-slate-950/40 rounded-lg border border-white/5">
+            <span className="text-xs text-slate-400 block mb-1">Access Tier</span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`status-badge ${accessTier === 'FULL' ? 'full' : 'restricted'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${accessTier === 'FULL' ? 'bg-blue-500 animate-pulse' : 'bg-amber-500'}`} />
+                {accessTier} Access
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-2 block leading-relaxed">
+              {accessTier === 'FULL' 
+                ? 'Full RAG context search enabled across Andrew\'s active repositories.' 
+                : 'General bio/resume information. Ingested codebases locked.'}
+            </span>
+          </div>
+
+          {accessTier === 'FULL' && (
+            <div className="p-3 bg-slate-950/30 rounded-lg border border-blue-500/10 text-xs">
+              <span className="text-blue-400 font-semibold block mb-1">RAG Search Status</span>
+              <span className="text-slate-400 block">Postgres index: Cosine HNSW</span>
+              <span className="text-slate-400 block mt-1">Embeddings: 113 vectors loaded</span>
+            </div>
+          )}
+        </div>
+
+        <button onClick={handleLogout} className="glass-button w-full flex items-center justify-center gap-2 mt-auto">
+          <LogOut className="w-4 h-4" /> Sign Out
         </button>
       </div>
 
-      {/* Warnings alerts */}
-      {systemAlert && (
-        <div className="px-4 py-3 bg-amber-950/30 border-b border-amber-900/30 flex items-center gap-2 text-xs text-amber-300">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span>{systemAlert}</span>
-        </div>
-      )}
-
-      {/* Chat logs messages panels */}
-      <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-slate-900/20">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-xl p-4 text-sm leading-relaxed ${
-              msg.sender === 'user' 
-                ? 'bg-blue-600 text-white rounded-br-none' 
-                : msg.sender === 'system'
-                ? 'bg-red-950/40 border border-red-900/30 text-red-300 text-xs text-center mx-auto'
-                : 'bg-slate-800/80 border border-white/5 text-slate-100 rounded-bl-none font-mono whitespace-pre-wrap'
-            }`}>
-              {msg.text}
-            </div>
+      {/* Main Chat Interface */}
+      <div className="chat-main">
+        {/* Chat header */}
+        <div className="p-4 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-semibold text-slate-400">Agent Online</span>
           </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-slate-800/80 border border-white/5 rounded-xl rounded-bl-none p-4 flex items-center gap-2 text-xs text-slate-400">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              Agent is reasoning...
-            </div>
+          <span className="text-xs font-mono text-slate-400">Qwen2.5-Coder:32B</span>
+        </div>
+
+        {/* System Alert banner */}
+        {systemAlert && (
+          <div className="px-4 py-3 bg-amber-950/30 border-b border-amber-900/30 flex items-center gap-2 text-xs text-amber-300">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{systemAlert}</span>
           </div>
         )}
-        <div ref={messagesEndRef} />
-      </div>
 
-      {/* Input panel bar */}
-      <form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 bg-slate-950/30 flex gap-3">
-        <input 
-          type="text" 
-          value={currentMessage} 
-          onChange={e => setCurrentMessage(e.target.value)} 
-          placeholder={accessTier === 'RESTRICTED' ? 'Ask resume/general questions (max 3 turns)...' : 'Ask technical code queries...'}
-          className="flex-1 glass-input"
-        />
-        <button type="submit" disabled={loading || !currentMessage.trim()} className="glass-button flex items-center justify-center p-3">
-          <Send className="w-4 h-4" />
-        </button>
-      </form>
+        {/* Chat Messages */}
+        <div className="flex-1 p-6 overflow-y-auto space-y-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`message-row ${msg.sender === 'user' ? 'user' : 'agent'}`}>
+              {msg.sender === 'system' ? (
+                <div className="chat-bubble system">{msg.text}</div>
+              ) : (
+                <div className={`chat-bubble ${msg.sender === 'user' ? 'user' : 'agent'}`}>
+                  {msg.sender === 'user' ? msg.text : parseMarkdown(msg.text)}
+                </div>
+              )}
+            </div>
+          ))}
+          {loading && (
+            <div className="message-row agent">
+              <div className="chat-bubble agent flex items-center gap-2 text-xs text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                Reasoning...
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Chat Input */}
+        <form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 bg-slate-950/20 flex gap-3">
+          <input 
+            type="text" 
+            value={currentMessage} 
+            onChange={e => setCurrentMessage(e.target.value)} 
+            placeholder={accessTier === 'RESTRICTED' ? 'Ask resume/general questions (max 3 turns)...' : 'Ask technical code queries...'}
+            className="flex-1 glass-input"
+          />
+          <button type="submit" disabled={loading || !currentMessage.trim()} className="glass-button flex items-center justify-center p-3">
+            <Send className="w-4 h-4" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
+
