@@ -131,12 +131,35 @@ The server will start listening on port `3099` on the host machine.
 
 ## API Documentation
 
-- **`POST /api/request_otp`**: Accepts visitor profile info, generates
-  a 6-digit code, and dispatches it via SMTP.
-- **`POST /api/verify_otp`**: Checks the validity of the submitted OTP
-  code. If the domain is corporate, sets `access_tier` to `FULL`, otherwise
-  `RESTRICTED`. Returns a secure `session_id`.
-- **`POST /api/chat`**: Handles streaming chat queries. Executes pgvector
-  similarity matches against context rows for `FULL` tier sessions.
-- **`POST /api/revalidate`**: Receives revalidation request payloads from
-  locked-out users.
+- **`POST /api/request_otp`**: Accepts visitor profile details (name, company, email, role, linkedin), generates a 6-digit OTP, and dispatches it via SMTP.
+- **`POST /api/verify_otp`**: Validates the visitor's OTP. Saves the visitor profile (name, company, role) to the SQLite registry, grants `FULL` access for corporate email domains, and returns a secure `session_id`.
+- **`POST /api/chat`**: Streams chat responses. Enforces session time-limits and question turns, checks rate limit strikes, runs pattern sanitizations, and queries pgvector cosine similarities for context.
+- **`POST /api/revalidate`**: Submits appeal forms for locked-out IPs.
+
+---
+
+## Key Features
+
+### 1. Dynamic Suggested Topics
+
+The left sidebar includes a responsive suggested topics panel that changes based on keywords in the visitor's questions (e.g. database topics for backend queries; access controls for security queries; leadership/architecture case studies for career queries).
+
+### 2. Built-in Markdown & Code Card Parser
+
+Chat viewport messages are processed by a custom React parser that renders headings, bold tags, bulleted lists, and scroll-protected code blocks formatted inside card segments.
+
+### 3. Category Roles & Hardened Time Limits
+
+Access rules and system prompts are dynamically structured based on the visitor's query role:
+
+- **HR Recruiter**: 15 minutes limit (focuses on work history and capability fit).
+- **Technical Interviewer**: 30 minutes limit (focuses on precise design patterns and code details).
+- **Founder/Builder Collaborator**: 40 minutes limit (focuses on MVPs, scalability, and codebases).
+- **Media / Press**: 20 minutes limit (custom instructions trigger media-savvy, diplomatic, politically correct answers).
+- **Cultural Fit Interview**: 20 minutes limit (focuses on soft skills, team mindset, and leadership values).
+- **Others / Guest**: Capped strictly at 3 questions.
+
+### 4. LLM Jailbreak Hardening
+
+- **Low Temperature**: Enforces a strict `0.2` or lower temperature (currently set to `0.1`) on Qwen2.5-Coder to maximize response factualness.
+- **Strike System**: Logs policy override attempts (e.g. `ignore all instructions`) and automatically locks sessions after 3 strikes.
