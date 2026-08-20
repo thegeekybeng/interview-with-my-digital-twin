@@ -328,7 +328,11 @@ async def chat(request: Request, payload: ChatRequest):
         data = {
             "model": "qwen2.5-coder:32b",
             "messages": [{"role": "user", "content": prompt}],
-            "stream": True
+            "stream": True,
+            "options": {
+                "temperature": 0.2,
+                "num_predict": 512
+            }
         }
         full_agent_response = []
         try:
