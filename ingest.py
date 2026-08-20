@@ -4,7 +4,7 @@ import glob
 import requests
 import psycopg2
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.64.0.1:11434")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 PG_DSN = os.getenv("PG_DSN", "postgresql://postgres:postgres@localhost:5432/your_pgdb_name")
 EMBEDDING_MODEL = "nomic-embed-text"
 
@@ -116,6 +116,13 @@ def scan_and_ingest(repo_path, repo_name):
             print(f"Processing: {rel_path}...")
             chunks = chunk_text(content)
             
+            doc_type = "code"
+            normalized_rel_path = rel_path.replace("\\", "/").lower()
+            if "adr" in normalized_rel_path or "decision" in normalized_rel_path:
+                doc_type = "adr"
+            elif "resume" in normalized_rel_path or "experience" in normalized_rel_path:
+                doc_type = "resume"
+
             for idx, chunk in enumerate(chunks):
                 vector = get_embedding(chunk)
                 if not vector:
@@ -127,10 +134,10 @@ def scan_and_ingest(repo_path, repo_name):
                 
                 cur.execute(
                     """
-                    INSERT INTO repository_embeddings (repo_name, file_path, chunk_index, content, embedding)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO repository_embeddings (doc_type, repo_name, file_path, chunk_index, content, embedding)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (repo_name, rel_path, idx, chunk, vector_str)
+                    (doc_type, repo_name, rel_path, idx, chunk, vector_str)
                 )
                 total_chunks += 1
             

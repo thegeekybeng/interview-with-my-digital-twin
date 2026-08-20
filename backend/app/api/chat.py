@@ -6,14 +6,16 @@ import datetime
 import requests
 import json
 import re
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from ..core.config import settings
-from ..core.database import get_pg_conn, release_pg_conn, get_tracker_conn
+from ..core.database import get_pg_conn, release_pg_conn
 from ..core.security import check_session_blocked, log_strike
+from ..core.semantic_validator import SemanticValidator
 
 router = APIRouter()
+validator = SemanticValidator()
 
 class OTPRequest(BaseModel):
     name: str
@@ -90,16 +92,24 @@ def send_lead_alert_email(visitor_name: str, company: str, email: str, project_s
 @router.post("/request_otp")
 async def request_otp(payload: OTPRequest):
     otp = f"{random.randint(100000, 999999)}"
-    expires = (datetime.datetime.now() + datetime.timedelta(minutes=10)).isoformat()
+    expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
     
-    conn = get_tracker_conn()
+    conn = get_pg_conn()
     cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO email_verifications (email, otp_code, expires_at, verified) VALUES (?, ?, ?, 0)",
-        (payload.email.lower(), otp, expires)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute(
+            """
+            INSERT INTO email_verifications (email, otp_code, expires_at, attempts)
+            VALUES (%s, %s, %s, 0)
+            ON CONFLICT (email) 
+            DO UPDATE SET otp_code = EXCLUDED.otp_code, expires_at = EXCLUDED.expires_at, attempts = 0
+            """,
+            (payload.email.lower(), otp, expires)
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        release_pg_conn(conn)
 
     # Dispatch email asynchronously/synchronously
     send_otp_email(payload.email, payload.name, otp)
@@ -107,41 +117,59 @@ async def request_otp(payload: OTPRequest):
 
 @router.post("/verify_otp")
 async def verify_otp(payload: OTPVerify):
-    conn = get_tracker_conn()
+    conn = get_pg_conn()
     cur = conn.cursor()
-    cur.execute("SELECT otp_code, expires_at FROM email_verifications WHERE email = ?", (payload.email.lower(),))
-    row = cur.fetchone()
+    try:
+        cur.execute("SELECT otp_code, expires_at FROM email_verifications WHERE email = %s", (payload.email.lower(),))
+        row = cur.fetchone()
 
-    if not row or row[0] != payload.otp_code:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Invalid verification code.")
+        if not row or row[0] != payload.otp_code:
+            raise HTTPException(status_code=400, detail="Invalid verification code.")
 
-    now = datetime.datetime.now().isoformat()
-    if row[1] < now:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Verification code has expired.")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        # Ensure timezone comparison matches
+        expires_at_val = row[1]
+        if isinstance(expires_at_val, str):
+            try:
+                expires_at_val = datetime.datetime.fromisoformat(expires_at_val.replace("Z", "+00:00"))
+            except ValueError:
+                expires_at_val = datetime.datetime.strptime(expires_at_val, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+        if expires_at_val.tzinfo is None:
+            expires_at_val = expires_at_val.replace(tzinfo=datetime.timezone.utc)
+        if expires_at_val < now:
+            raise HTTPException(status_code=400, detail="Verification code has expired.")
+        
+        # Check if email domain is generic to determine tier
+        generic_domains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com"]
+        email_domain = payload.email.split("@")[-1].lower()
+        access_tier = "RESTRICTED" if email_domain in generic_domains else "FULL"
+        
+        session_id = str(uuid.uuid4())
+        
+        role_limits = {
+            "HR Recruiter": 15,
+            "Technical Interviewer": 30,
+            "Founder/Builder Collaborator": 40,
+            "Media / Press": 20,
+            "Cultural Fit Interview": 20,
+            "Others / Guest": 120
+        }
+        limit_minutes = role_limits.get(payload.role, 120)
+        session_expires_at = now + datetime.timedelta(minutes=limit_minutes)
 
-    cur.execute("UPDATE email_verifications SET verified = 1 WHERE email = ?", (payload.email.lower(),))
-    
-    # Check if email domain is generic to determine tier
-    generic_domains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com"]
-    email_domain = payload.email.split("@")[-1].lower()
-    access_tier = "RESTRICTED" if email_domain in generic_domains else "FULL"
-    
-    session_id = str(uuid.uuid4())
-    
-    # Save the visitor details
-    cur.execute(
-        """
-        INSERT INTO visitors (session_id, ip_address, real_name, company_name, real_email, role_type, access_tier)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (session_id, payload.ip_address, payload.name, payload.company, payload.email.lower(), payload.role, access_tier)
-    )
-    conn.commit()
-    conn.close()
-
-    return {"session_id": session_id, "access_tier": access_tier}
+        # Save the visitor details
+        cur.execute(
+            """
+            INSERT INTO visitors (session_id, email, full_name, company, role_type, access_tier, session_expires_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (session_id, payload.email.lower(), payload.name, payload.company, payload.role, access_tier, session_expires_at)
+        )
+        conn.commit()
+        return {"session_id": session_id, "access_tier": access_tier}
+    finally:
+        cur.close()
+        release_pg_conn(conn)
 
 @router.post("/chat")
 async def chat(request: Request, payload: ChatRequest):
@@ -154,65 +182,71 @@ async def chat(request: Request, payload: ChatRequest):
     if check_session_blocked(ip, session_id):
         raise HTTPException(status_code=403, detail="Access Denied: Your IP or Session has been blocked.")
 
-    # Fetch visitor profile from SQLite
-    conn_tracker = get_tracker_conn()
+    # Fetch visitor profile from Postgres
+    conn_tracker = get_pg_conn()
     cur_tracker = conn_tracker.cursor()
-    cur_tracker.execute("SELECT real_name, company_name, real_email, access_tier, role_type, registered_at FROM visitors WHERE session_id = ?", (session_id,))
-    visitor_row = cur_tracker.fetchone()
-    
-    if not visitor_row:
-        conn_tracker.close()
-        raise HTTPException(status_code=401, detail="Invalid Session ID.")
+    try:
+        cur_tracker.execute("SELECT full_name, company, email, access_tier, role_type, session_expires_at, questions_remaining FROM visitors WHERE session_id = %s", (session_id,))
+        visitor_row = cur_tracker.fetchone()
+        
+        if not visitor_row:
+            raise HTTPException(status_code=401, detail="Invalid Session ID.")
 
-    visitor_name, visitor_company, visitor_email, access_tier, visitor_role, registered_at = visitor_row
+        visitor_name, visitor_company, visitor_email, access_tier, visitor_role, session_expires_at, questions_remaining = visitor_row
 
-    # 1. Enforce time limits based on query categories
-    role_limits = {
-        "HR Recruiter": 15,
-        "Technical Interviewer": 30,
-        "Founder/Builder Collaborator": 40,
-        "Media / Press": 20,
-        "Cultural Fit Interview": 20,
-        "Others / Guest": None
-    }
-    
-    limit = role_limits.get(visitor_role, None)
-    if limit is not None:
-        try:
-            # sqlite CURRENT_TIMESTAMP returns UTC format 'YYYY-MM-DD HH:MM:SS'
-            registered_dt = datetime.datetime.strptime(registered_at, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
+        # 1a. Semantic Input Intent Guardrail Check
+        role_mapping = {
+            "HR Recruiter": "hr",
+            "Technical Interviewer": "technical",
+            "Founder/Builder Collaborator": "founder",
+            "Media / Press": "media",
+            "Cultural Fit Interview": "cultural"
+        }
+        role_type = role_mapping.get(visitor_role, "global")
+
+        is_safe, refusal = await validator.validate_input_intent(
+            role_type=role_type,
+            query=payload.message
+        )
+        if not is_safe:
+            raise HTTPException(status_code=400, detail=refusal)
+
+        # 1. Enforce time limits based on session_expires_at
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if isinstance(session_expires_at, str):
             try:
-                registered_dt = datetime.datetime.fromisoformat(registered_at)
+                session_expires_at = datetime.datetime.fromisoformat(session_expires_at.replace("Z", "+00:00"))
             except ValueError:
-                registered_dt = datetime.datetime.utcnow()
-                
-        elapsed_minutes = (datetime.datetime.utcnow() - registered_dt).total_seconds() / 60.0
-        if elapsed_minutes > limit:
-            conn_tracker.close()
+                session_expires_at = datetime.datetime.strptime(session_expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+        if session_expires_at.tzinfo is None:
+            session_expires_at = session_expires_at.replace(tzinfo=datetime.timezone.utc)
+        if session_expires_at < now:
             raise HTTPException(
                 status_code=403,
-                detail=f"Access Denied: Your session has expired. The max time limit of {limit} minutes for {visitor_role} has been reached."
+                detail=f"Access Denied: Your session has expired. The max time limit for {visitor_role} has been reached."
             )
 
-    # 2. Enforce turn limits for Guest/Others role (max 3 questions)
-    if visitor_role not in ["HR Recruiter", "Technical Interviewer", "Founder/Builder Collaborator", "Media / Press"]:
-        cur_tracker.execute("SELECT COUNT(*) FROM chat_logs WHERE session_id = ? AND sender = 'USER'", (session_id,))
-        turns = cur_tracker.fetchone()[0]
-        if turns >= 3:
-            conn_tracker.close()
-            raise HTTPException(
-                status_code=403, 
-                detail="Access Denied: You have reached the maximum limit of 3 queries allowed for Guest access."
-            )
+        # 2. Enforce turn limits for Guest/Others role (max 3 questions)
+        if visitor_role not in ["HR Recruiter", "Technical Interviewer", "Founder/Builder Collaborator", "Media / Press", "Cultural Fit Interview"]:
+            if questions_remaining <= 0:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Access Denied: You have reached the maximum limit of 3 queries allowed for Guest access."
+                )
 
-    # Log user query in chat_logs
-    cur_tracker.execute(
-        "INSERT INTO chat_logs (session_id, sender, message) VALUES (?, 'USER', ?)",
-        (session_id, payload.message)
-    )
-    conn_tracker.commit()
-    conn_tracker.close()
+        # Log user query in chat_logs
+        cur_tracker.execute(
+            "INSERT INTO chat_logs (session_id, role, content) VALUES (%s, 'user', %s)",
+            (session_id, payload.message)
+        )
+        # Decrement questions remaining if applicable
+        if visitor_role not in ["HR Recruiter", "Technical Interviewer", "Founder/Builder Collaborator", "Media / Press", "Cultural Fit Interview"]:
+            cur_tracker.execute("UPDATE visitors SET questions_remaining = questions_remaining - 1 WHERE session_id = %s", (session_id,))
+            
+        conn_tracker.commit()
+    finally:
+        cur_tracker.close()
+        release_pg_conn(conn_tracker)
 
     # 2. Check for security violation overrides
     violation_response = log_strike(ip, payload.message)
@@ -224,29 +258,28 @@ async def chat(request: Request, payload: ChatRequest):
     is_consulting = any(re.search(pattern, payload.message, re.IGNORECASE) for pattern in consulting_keywords)
     
     if is_consulting:
-        conn_leads = get_tracker_conn()
+        conn_leads = get_pg_conn()
         cur_leads = conn_leads.cursor()
-        
-        # Save consulting leads record
-        cur_leads.execute(
-            """
-            INSERT INTO consulting_leads (session_id, project_scope, target_env, compliance_reqs, estimated_budget, timeframe, smtp_alerted)
-            VALUES (?, ?, 'Cloud/Unspecified', 'Standard', 'Negotiable', 'TBD', 0)
-            """,
-            (session_id, payload.message)
-        )
-        lead_id = cur_leads.lastrowid
-        conn_leads.commit()
-        conn_leads.close()
-
-        # Send alert email to Andrew
-        alert_sent = send_lead_alert_email(visitor_name, visitor_company, visitor_email, payload.message)
-        if alert_sent:
-            conn_leads = get_tracker_conn()
-            cur_leads = conn_leads.cursor()
-            cur_leads.execute("UPDATE consulting_leads SET smtp_alerted = 1 WHERE id = ?", (lead_id,))
+        try:
+            # Save consulting leads record
+            cur_leads.execute(
+                """
+                INSERT INTO consulting_leads (session_id, company, budget_range, scope_summary, notified_via_smtp)
+                VALUES (%s, %s, 'Negotiable', %s, FALSE) RETURNING id
+                """,
+                (session_id, visitor_company, payload.message)
+            )
+            lead_id = cur_leads.fetchone()[0]
             conn_leads.commit()
-            conn_leads.close()
+            
+            # Send alert email to Andrew
+            alert_sent = send_lead_alert_email(visitor_name, visitor_company, visitor_email, payload.message)
+            if alert_sent:
+                cur_leads.execute("UPDATE consulting_leads SET notified_via_smtp = TRUE WHERE id = %s", (lead_id,))
+                conn_leads.commit()
+        finally:
+            cur_leads.close()
+            release_pg_conn(conn_leads)
 
     # 4. Cosine RAG Search (Skip if RESTRICTED tier)
     context = "RAG search results skipped under RESTRICTED access tier."
@@ -318,19 +351,33 @@ async def chat(request: Request, payload: ChatRequest):
             )
 
 
+        # Select model dynamically based on role type
+        if visitor_role in ["Technical Interviewer", "Founder/Builder Collaborator"]:
+            model_name = "qwen2.5-coder:32b"
+            model_temp = 0.1
+        else:
+            model_name = "llama3.1:8b"
+            model_temp = 0.2
+
+        diagram_instruction = (
+            "When explaining multi-step processes, network routing, or system component topologies, "
+            "include a clean Mermaid.js diagram inside a ```mermaid``` code block before or after the textual explanation. "
+            "Keep node labels concise."
+        )
+
         prompt = (
             f"System: You are speaking with {visitor_name} from {visitor_company} (Role: {visitor_role}). "
-            f"Access Tier: {access_tier}. {role_instruction}"
+            f"Access Tier: {access_tier}. {role_instruction} {diagram_instruction} "
             f"If they request consulting or building, explain your custom architecting skills and invite them to schedule a call. "
             f"Code context:\n{context}\n\nUser: {payload.message}"
         )
         url = f"{settings.OLLAMA_URL}/api/chat"
         data = {
-            "model": "qwen2.5-coder:32b",
+            "model": model_name,
             "messages": [{"role": "user", "content": prompt}],
             "stream": True,
             "options": {
-                "temperature": 0.1,
+                "temperature": model_temp,
                 "num_predict": 512
             }
         }
@@ -356,28 +403,54 @@ async def chat(request: Request, payload: ChatRequest):
 
         # After streaming is complete, log agent response in database
         agent_message = "".join(full_agent_response)
-        conn_log = get_tracker_conn()
+        conn_log = get_pg_conn()
         cur_log = conn_log.cursor()
-        cur_log.execute(
-            "INSERT INTO chat_logs (session_id, sender, message) VALUES (?, 'AGENT', ?)",
-            (session_id, agent_message)
-        )
-        conn_log.commit()
-        conn_log.close()
+        try:
+            cur_log.execute(
+                "INSERT INTO chat_logs (session_id, role, content) VALUES (%s, 'assistant', %s)",
+                (session_id, agent_message)
+            )
+            conn_log.commit()
+        finally:
+            cur_log.close()
+            release_pg_conn(conn_log)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+        # Set the agent message for the background task audit
+        audit_data["agent_message"] = agent_message
+
+    async def run_tone_audit_task(role_type_val: str, data: dict):
+        try:
+            msg = data.get("agent_message", "")
+            if msg:
+                ok, status = await validator.validate_output_tone(role_type_val, msg)
+                print(f"Audit Tone Guardrail: Role={role_type_val} | Status={status}")
+        except Exception as audit_err:
+            print(f"Audit Tone Guardrail Error: {audit_err}")
+
+    audit_data = {"agent_message": ""}
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(run_tone_audit_task, role_type, audit_data)
+
+    return StreamingResponse(
+        event_generator(), 
+        media_type="text/event-stream", 
+        background=background_tasks
+    )
 
 @router.post("/revalidate")
 async def revalidate(payload: RevalidateRequest):
-    conn = get_tracker_conn()
+    conn = get_pg_conn()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO revalidation_appeals (ip_address, real_name, real_email, contact_details, reason)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (payload.ip_address, payload.real_name, payload.real_email, payload.contact_details, payload.reason)
-    )
-    conn.commit()
-    conn.close()
-    return JSONResponse(status_code=200, content={"status": "submitted", "message": "Appeal submitted. Your details will be verified manually."})
+    try:
+        cur.execute(
+            """
+            INSERT INTO revalidation_appeals (ip_address, real_name, real_email, contact_details, reason)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (payload.ip_address, payload.real_name, payload.real_email, payload.contact_details, payload.reason)
+        )
+        conn.commit()
+        return JSONResponse(status_code=200, content={"status": "submitted", "message": "Appeal submitted. Your details will be verified manually."})
+    finally:
+        cur.close()
+        release_pg_conn(conn)

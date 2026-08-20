@@ -11,8 +11,8 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - OLLAMA_URL=http://100.64.0.1:11434
-      - PG_DSN=postgresql://mps:mps-db-super-secret-pass-2026-alpha@100.64.0.2:5432/your_pgdb_name
+      - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
+      - PG_DSN=${PG_DSN:-postgresql://postgres:postgres@localhost:5432/your_pgdb_name}
       - TRACKER_DB=/app/data/abuse_tracker.db
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}

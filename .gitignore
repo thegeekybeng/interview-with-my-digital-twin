@@ -21,3 +21,6 @@ data/
 
 # Logs
 *.log
+
+# AI Architecture Repository — internal governance notes, gitignored
+.ai-arch/

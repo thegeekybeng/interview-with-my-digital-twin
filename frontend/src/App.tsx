@@ -4,6 +4,7 @@ import {
   User, Briefcase, Mail, Link as LinkIcon, 
   Loader2, Sparkles, LogOut, ArrowRight
 } from 'lucide-react';
+import { MermaidBlock } from './components/MermaidBlock';
 
 interface Message {
   sender: 'user' | 'agent' | 'system';
@@ -22,15 +23,32 @@ function parseInlineStyles(text: string): React.ReactNode[] {
 
 function parseMarkdown(text: string): React.ReactNode {
   if (!text) return null;
-  const parts = text.split(/(```[\s\S]*?```)/g);
+  const parts = text.split(/(```[\s\S]*?(?:```|$))/g);
 
   return (
     <div className="markdown-content">
       {parts.map((part, index) => {
-        if (part.startsWith('```') && part.endsWith('```')) {
-          const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+        if (part.startsWith('```')) {
+          const isClosed = part.endsWith('```');
+          const codeContent = isClosed ? part.slice(3, -3) : part.slice(3);
+          const match = codeContent.match(/^(\w*)\n([\s\S]*)$/);
           const lang = match ? match[1] : '';
-          const code = match ? match[2].trim() : part.slice(3, -3).trim();
+          const code = match ? match[2].trim() : codeContent.trim();
+
+          if (lang === 'mermaid') {
+            if (!isClosed) {
+              return (
+                <div key={index} className="code-block-container animate-pulse">
+                  <div className="code-block-lang">mermaid (generating diagram...)</div>
+                  <pre className="code-block-pre">
+                    <code className="code-block-code">{code}</code>
+                  </pre>
+                </div>
+              );
+            }
+            return <MermaidBlock key={index} chart={code} />;
+          }
+
           return (
             <div key={index} className="code-block-container">
               {lang && <div className="code-block-lang">{lang}</div>}
@@ -165,10 +183,15 @@ export default function App() {
     const savedSession = localStorage.getItem('visitor_session_id');
     const savedTier = localStorage.getItem('visitor_access_tier');
     const savedName = localStorage.getItem('visitor_name');
+    const savedCompany = localStorage.getItem('visitor_company');
+    const savedRole = localStorage.getItem('visitor_role');
     if (savedSession && savedTier) {
       setSessionId(savedSession);
       setAccessTier(savedTier as 'FULL' | 'RESTRICTED');
       setVerified(true);
+      if (savedName) setName(savedName);
+      if (savedCompany) setCompany(savedCompany);
+      if (savedRole) setRole(savedRole);
       setMessages([
         {
           sender: 'agent',
@@ -230,6 +253,8 @@ export default function App() {
         localStorage.setItem('visitor_session_id', data.session_id);
         localStorage.setItem('visitor_access_tier', data.access_tier);
         localStorage.setItem('visitor_name', name);
+        localStorage.setItem('visitor_company', company);
+        localStorage.setItem('visitor_role', role);
         
         setMessages([
           {
@@ -394,9 +419,15 @@ export default function App() {
     localStorage.removeItem('visitor_session_id');
     localStorage.removeItem('visitor_access_tier');
     localStorage.removeItem('visitor_name');
+    localStorage.removeItem('visitor_company');
+    localStorage.removeItem('visitor_role');
     setVerified(false);
     setOtpSent(false);
     setMessages([]);
+    setName('');
+    setCompany('');
+    setEmail('');
+    setOtpCode('');
   };
 
   // 1. Blocked Overlay Screen View

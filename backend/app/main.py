@@ -13,9 +13,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from .core.mcp_server import mcp
+
 @app.on_event("startup")
 def startup():
     init_pg_pool()
+
+app.mount("/mcp", mcp.http_app(transport="sse"))
 
 app.include_router(chat.router, prefix="/api")
 
