@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import './index.css';
 import { 
   Send, Shield, CheckCircle, AlertTriangle, 
   User, Briefcase, Mail, Link as LinkIcon, 
