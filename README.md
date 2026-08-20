@@ -1,4 +1,4 @@
-# Digital Twin Interview Agent
+# Interview with My Digital Twin
 
 A secure, production-grade Model Context Protocol (MCP) compatible generative AI agent designed to represent Andrew Yeo (Solutions Architect) during technical recruiting interviews. The system runs an automated Codebase Retrieval-Augmented Generation (RAG) backend utilizing a PostgreSQL database (with pgvector) and local Ollama inference models, protected by a Know Your Visitor (KYV) access verification loop.
 
@@ -18,7 +18,7 @@ A secure, production-grade Model Context Protocol (MCP) compatible generative AI
 ## Directory Layout
 
 ```text
-digital-twin/
+interview-with-my-digital-twin/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
@@ -86,7 +86,7 @@ export PG_DSN="postgresql://user:pass@host:port/dbname"
 export OLLAMA_URL="http://100.64.0.1:11434"
 
 # Run the ingestion script
-python ingest.py <path_to_codebase> <repository_name>
+python ingest.py <path_to_codebase> interview-with-my-digital-twin
 ```
 
 ### 2. Environment Variables (.env)
@@ -103,7 +103,7 @@ To compile and deploy the backend FastAPI container service:
 ```bash
 docker compose up --build -d
 ```
-The server will start listening on port `8080` on the host machine.
+The server will start listening on port `3099` on the host machine.
 
 ---
 

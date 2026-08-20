@@ -5,9 +5,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: digital-twin-backend
+    container_name: interview-with-my-digital-twin-backend
     ports:
-      - "8080:8000"
+      - "3099:8000"
     volumes:
       - ./data:/app/data
     environment:

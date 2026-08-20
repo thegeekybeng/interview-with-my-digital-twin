@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import chat
 from .core.database import init_pg_pool
 
-app = FastAPI(title="Andrew Yeo Digital Twin API")
+app = FastAPI(title="Interview with Andrew Yeo's Digital Twin API")
 
 app.add_middleware(
     CORSMiddleware,
