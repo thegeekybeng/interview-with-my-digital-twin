@@ -106,6 +106,56 @@ export default function App() {
   const [appealSubmitted, setAppealSubmitted] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Suggestions state & context classifier
+  const [suggestions, setSuggestions] = useState<string[]>([
+    "Tell me about Andrew's background",
+    "What are his key technical skills?",
+    "What is his experience with GenAI?"
+  ]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const userText = messages
+      .filter(m => m.sender === 'user')
+      .map(m => m.text.toLowerCase())
+      .join(' ');
+
+    if (userText.includes('code') || userText.includes('database') || userText.includes('vector') || userText.includes('rag') || userText.includes('ingest') || userText.includes('backend') || userText.includes('architecture')) {
+      setSuggestions([
+        "How does pgvector search work?",
+        "What is Andrew's microservices design?",
+        "Explain the codebase ingestion pipeline"
+      ]);
+    } else if (userText.includes('security') || userText.includes('audit') || userText.includes('kyv') || userText.includes('limit') || userText.includes('block') || userText.includes('strike') || userText.includes('shield') || userText.includes('compliance')) {
+      setSuggestions([
+        "What is the Know Your Visitor loop?",
+        "How does the PII Shield work?",
+        "Explain UGreen NAS security patterns"
+      ]);
+    } else if (userText.includes('role') || userText.includes('job') || userText.includes('work') || userText.includes('career') || userText.includes('experience') || userText.includes('lead') || userText.includes('philosoph')) {
+      setSuggestions([
+        "What architect roles has he held?",
+        "Tell me about his team leadership",
+        "What is his Agentic AI design philosophy?"
+      ]);
+    } else {
+      setSuggestions([
+        "Tell me about Andrew's background",
+        "What are his key technical skills?",
+        "What is his experience with GenAI?"
+      ]);
+    }
+  }, [messages]);
+
+  const handleSuggestionClick = (q: string) => {
+    setCurrentMessage(q);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+  };
+
   
   // API URL binding (routed via localhost locally, pointing to public tunnel in production)
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -555,6 +605,24 @@ export default function App() {
               <span className="text-slate-400 block mt-1">Embeddings: 113 vectors loaded</span>
             </div>
           )}
+
+          {/* Dynamic Suggested Topics */}
+          <div className="p-3 bg-slate-950/40 rounded-lg border border-white/5">
+            <span className="text-xs text-slate-400 font-semibold block mb-2">Suggested Topics</span>
+            <div className="space-y-2">
+              {suggestions.map((q, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSuggestionClick(q)}
+                  disabled={loading}
+                  className="w-full text-left text-xs text-blue-400 hover:text-blue-300 bg-slate-950/30 hover:bg-slate-950/60 p-2 rounded border border-blue-500/10 transition-colors block"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <button onClick={handleLogout} className="glass-button w-full flex items-center justify-center gap-2 mt-auto">
@@ -609,6 +677,7 @@ export default function App() {
         <form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 bg-slate-950/20 flex gap-3">
           <input 
             type="text" 
+            ref={inputRef}
             value={currentMessage} 
             onChange={e => setCurrentMessage(e.target.value)} 
             placeholder={accessTier === 'RESTRICTED' ? 'Ask resume/general questions (max 3 turns)...' : 'Ask technical code queries...'}
