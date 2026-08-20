@@ -16,5 +16,8 @@ frontend/dist/
 .env.local
 .env.*.local
 
+# Persistent data
+data/
+
 # Logs
 *.log
