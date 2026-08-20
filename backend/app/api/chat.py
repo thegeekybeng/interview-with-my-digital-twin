@@ -330,7 +330,7 @@ async def chat(request: Request, payload: ChatRequest):
             "messages": [{"role": "user", "content": prompt}],
             "stream": True,
             "options": {
-                "temperature": 0.2,
+                "temperature": 0.1,
                 "num_predict": 512
             }
         }
