@@ -80,7 +80,7 @@ export default function App() {
   const [name, setName] = useState('');
   const [company, setCompany] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState('Recruiter');
+  const [role, setRole] = useState('HR Recruiter');
   const [linkedin, setLinkedin] = useState('');
   const [otpCode, setOtpCode] = useState('');
   
@@ -213,7 +213,14 @@ export default function App() {
       const res = await fetch(`${API_URL}/api/verify_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp_code: otpCode, ip_address: '127.0.0.1' })
+        body: JSON.stringify({ 
+          email, 
+          otp_code: otpCode, 
+          ip_address: '127.0.0.1',
+          name,
+          company,
+          role
+        })
       });
       if (res.ok) {
         const data = await res.json();
@@ -514,10 +521,12 @@ export default function App() {
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Your Role</label>
                 <select value={role} onChange={e => setRole(e.target.value)} className="w-full glass-input">
-                  <option value="Recruiter">Recruiter</option>
-                  <option value="Hiring Manager">Hiring Manager</option>
-                  <option value="Technical Interviewer">Technical Interviewer</option>
-                  <option value="General Visitor">General Visitor</option>
+                  <option value="HR Recruiter">HR Recruiter (Max 15 Mins)</option>
+                  <option value="Technical Interviewer">Technical Interviewer (Max 30 Mins)</option>
+                  <option value="Founder/Builder Collaborator">Founder/Builder (Max 40 Mins)</option>
+                  <option value="Media / Press">Media / Press (Max 20 Mins)</option>
+                  <option value="Cultural Fit Interview">Cultural Fit (Max 20 Mins)</option>
+                  <option value="Others / Guest">Others / Guest (Max 3 Qs)</option>
                 </select>
               </div>
               <div>

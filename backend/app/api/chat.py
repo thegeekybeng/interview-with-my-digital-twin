@@ -26,6 +26,9 @@ class OTPVerify(BaseModel):
     email: str
     otp_code: str
     ip_address: str
+    name: str = "Visitor"
+    company: str = "Company"
+    role: str = "Others / Guest"
 
 class ChatRequest(BaseModel):
     message: str
@@ -131,9 +134,9 @@ async def verify_otp(payload: OTPVerify):
     cur.execute(
         """
         INSERT INTO visitors (session_id, ip_address, real_name, company_name, real_email, role_type, access_tier)
-        VALUES (?, ?, ?, ?, ?, 'Recruiter', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (session_id, payload.ip_address, "Visitor", "Company", payload.email.lower(), access_tier)
+        (session_id, payload.ip_address, payload.name, payload.company, payload.email.lower(), payload.role, access_tier)
     )
     conn.commit()
     conn.close()
@@ -154,24 +157,53 @@ async def chat(request: Request, payload: ChatRequest):
     # Fetch visitor profile from SQLite
     conn_tracker = get_tracker_conn()
     cur_tracker = conn_tracker.cursor()
-    cur_tracker.execute("SELECT real_name, company_name, real_email, access_tier FROM visitors WHERE session_id = ?", (session_id,))
+    cur_tracker.execute("SELECT real_name, company_name, real_email, access_tier, role_type, registered_at FROM visitors WHERE session_id = ?", (session_id,))
     visitor_row = cur_tracker.fetchone()
     
     if not visitor_row:
         conn_tracker.close()
         raise HTTPException(status_code=401, detail="Invalid Session ID.")
 
-    visitor_name, visitor_company, visitor_email, access_tier = visitor_row
+    visitor_name, visitor_company, visitor_email, access_tier, visitor_role, registered_at = visitor_row
 
-    # 1. Enforce turn limits for restricted access tiers
-    if access_tier == "RESTRICTED":
+    # 1. Enforce time limits based on query categories
+    role_limits = {
+        "HR Recruiter": 15,
+        "Technical Interviewer": 30,
+        "Founder/Builder Collaborator": 40,
+        "Media / Press": 20,
+        "Cultural Fit Interview": 20,
+        "Others / Guest": None
+    }
+    
+    limit = role_limits.get(visitor_role, None)
+    if limit is not None:
+        try:
+            # sqlite CURRENT_TIMESTAMP returns UTC format 'YYYY-MM-DD HH:MM:SS'
+            registered_dt = datetime.datetime.strptime(registered_at, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            try:
+                registered_dt = datetime.datetime.fromisoformat(registered_at)
+            except ValueError:
+                registered_dt = datetime.datetime.utcnow()
+                
+        elapsed_minutes = (datetime.datetime.utcnow() - registered_dt).total_seconds() / 60.0
+        if elapsed_minutes > limit:
+            conn_tracker.close()
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access Denied: Your session has expired. The max time limit of {limit} minutes for {visitor_role} has been reached."
+            )
+
+    # 2. Enforce turn limits for Guest/Others role (max 3 questions)
+    if visitor_role not in ["HR Recruiter", "Technical Interviewer", "Founder/Builder Collaborator", "Media / Press"]:
         cur_tracker.execute("SELECT COUNT(*) FROM chat_logs WHERE session_id = ? AND sender = 'USER'", (session_id,))
         turns = cur_tracker.fetchone()[0]
         if turns >= 3:
             conn_tracker.close()
             raise HTTPException(
                 status_code=403, 
-                detail="Access Restricted: You have reached the maximum limit of 3 queries. Please authenticate with a corporate company email to unlock unlimited chat."
+                detail="Access Denied: You have reached the maximum limit of 3 queries allowed for Guest access."
             )
 
     # Log user query in chat_logs
@@ -250,9 +282,45 @@ async def chat(request: Request, payload: ChatRequest):
 
     # 5. Stream LLM completions via event generator
     def event_generator():
+        role_instruction = ""
+        if visitor_role == "Media / Press":
+            role_instruction = (
+                "You are representing Andrew Yeo to the media/press. "
+                "Structure your responses in a highly media-savvy, professional, "
+                "diplomatic, and politically correct manner. "
+                "Ensure statements are positive, objective, and represent "
+                "solutions architecture leadership appropriately. "
+            )
+        elif visitor_role == "HR Recruiter":
+            role_instruction = (
+                "You are speaking to an HR Recruiter. "
+                "Focus on Andrew's employment background, years of experience, "
+                "collaborative skills, and overall fit for technical roles. "
+            )
+        elif visitor_role == "Technical Interviewer":
+            role_instruction = (
+                "You are speaking to a Technical Interviewer. "
+                "Provide highly technical, precise, and structural answers. "
+                "Reference design patterns, algorithms, and deep systems architecture details. "
+            )
+        elif visitor_role == "Founder/Builder Collaborator":
+            role_instruction = (
+                "You are speaking to a Founder or Builder Collaborator. "
+                "Focus on product design, architecture scalability, MVP velocity, "
+                "and custom engineering capabilities. "
+            )
+        elif visitor_role == "Cultural Fit Interview":
+            role_instruction = (
+                "You are speaking to a Cultural Fit Interviewer. "
+                "Highlight Andrew's collaborative mindset, team player values, "
+                "empathetic leadership approach, adaptability to company cultures, "
+                "and proactive problem-solving attitude in cross-functional squads. "
+            )
+
+
         prompt = (
-            f"System: You are speaking with {visitor_name} from {visitor_company}. "
-            f"Access Tier: {access_tier}. "
+            f"System: You are speaking with {visitor_name} from {visitor_company} (Role: {visitor_role}). "
+            f"Access Tier: {access_tier}. {role_instruction}"
             f"If they request consulting or building, explain your custom architecting skills and invite them to schedule a call. "
             f"Code context:\n{context}\n\nUser: {payload.message}"
         )
