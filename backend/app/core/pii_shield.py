@@ -26,6 +26,10 @@ class PIIShield:
         (r'/Users/[a-zA-Z0-9_-]+/[^\s]+', '[REDACTED_LOCAL_PATH]'),
         (r'/home/[a-zA-Z0-9_-]+/[^\s]+', '[REDACTED_LOCAL_PATH]'),
         
+        # Phone Numbers & Personal Emails
+        (r'\+?\b(?:65\s*)?[89]\d{3}\s*\d{4}\b', '[REDACTED_PHONE]'),
+        (r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[REDACTED_EMAIL]'),
+
         # MAC Addresses & Credentials
         (r'\b(?:[0-9A-Fa-f]{2}[:-]){5}(?:[0-9A-Fa-f]{2})\b', '[REDACTED_MAC_ADDR]'),
         (r'(?i)(password|secret|api[_-]?key|token)\s*=\s*[\'"][^\'"]+[\'"]', r'\1=[REDACTED_SECRET]'),

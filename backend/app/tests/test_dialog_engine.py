@@ -83,7 +83,31 @@ def test_persona_dialog_engine_offline():
     assert "one-man army" in sys_instruction
     assert "do not have an engineering team" in sys_instruction
     assert "first-person singular" in sys_instruction
-    print("✓ System instruction solo builder identity verified.")
+    # 7. Test stripping of echoed context markers (e.g. Ingested Codebase Context / [Repo: ...)
+    echoed_text = (
+        "I have evolved from full-stack software engineering into enterprise systems architecture.\n\n"
+        "Ingested Codebase Context:\n"
+        "[Repo: the-perfect-fit | Path: .agents/canonical_facts.yaml]\n"
+        "identity:\n"
+        "name: \"Andrew Yeo\"\n"
+        "contact:\n"
+        "\"+65 9123 4567\"\n"
+    )
+    cleaned_echo = engine.clean_robotics(echoed_text)
+    assert "Ingested Codebase Context" not in cleaned_echo, f"Echoed marker not stripped: {cleaned_echo}"
+    assert "[Repo:" not in cleaned_echo, f"Repo marker not stripped: {cleaned_echo}"
+    assert "canonical_facts" not in cleaned_echo, f"Filename not stripped: {cleaned_echo}"
+    assert cleaned_echo == "I have evolved from full-stack software engineering into enterprise systems architecture."
+    print("✓ Echoed context marker stripping verified.")
+
+    # 8. Test PII shield phone and email redaction
+    pii_sample = "Contact me at +65 9123 4567 or thegeekybeng@gmail.com for details."
+    sanitized_pii = PIIShield.sanitize_text(pii_sample)
+    assert "+65 9123 4567" not in sanitized_pii
+    assert "thegeekybeng@gmail.com" not in sanitized_pii
+    assert "[REDACTED_PHONE]" in sanitized_pii
+    assert "[REDACTED_EMAIL]" in sanitized_pii
+    print("✓ Phone and email PII redaction verified.")
 
     print("All PersonaDialogEngine unit tests PASSED successfully!")
 

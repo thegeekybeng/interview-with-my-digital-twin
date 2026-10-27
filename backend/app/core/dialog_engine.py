@@ -179,6 +179,9 @@ class PgVectorRetriever:
                     """
                     SELECT repo_name, file_path, content
                     FROM repository_embeddings
+                    WHERE file_path NOT LIKE '%.agents%'
+                      AND file_path NOT LIKE '%canonical_facts%'
+                      AND file_path NOT LIKE '%.env%'
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s;
                     """,
@@ -328,6 +331,22 @@ class PersonaDialogEngine:
         """Strips artificial self-referential disclaimers, AI meta-phrases, and robotic preambles."""
         if not text:
             return ""
+
+        # Strip echoed prompt context, codebase headers, or raw data blocks
+        echo_markers = [
+            "Ingested Codebase Context:",
+            "Ingested Codebase Context",
+            "Technical Code Reference:",
+            "[Repo:",
+            "Code context:",
+            "Context facts:",
+            "Code reference:",
+            "canonical_facts.yaml",
+            "identity:\n  name:",
+        ]
+        for marker in echo_markers:
+            if marker in text:
+                text = text.split(marker)[0].strip()
 
         # Remove disclaimers, meta-commentary, and third-person prefixes
         for _ in range(6):
@@ -543,14 +562,24 @@ class PersonaDialogEngine:
         # Dynamically substitute target company name in facts
         context_fact = context_fact.replace("BCG X", target_company)
 
-        # Dual Retrieval: If FULL tier, search pgvector repository embeddings for rich architectural context
+        # Dual Retrieval: Only fetch pgvector codebase chunks if:
+        # 1. The user specifically asks about code, repositories, technical stack, or architecture implementations; OR
+        # 2. There is no curated QA match in the primary persona database.
         vector_context = ""
-        if access_tier == "FULL" and self.vector_retriever:
+        tech_indicators = [
+            "code", "repo", "repository", "docker", "prisma", "sql", "postgres", 
+            "api", "schema", "endpoint", "architecture", "stack", "pipeline", 
+            "implementation", "mps-connect", "nutristar", "pc2e", "telemetry",
+            "fine-tune", "lora", "database", "fastapi", "next.js", "react", "tailwind"
+        ]
+        is_tech_query = any(k in clean_msg.lower() for k in tech_indicators)
+
+        if access_tier == "FULL" and self.vector_retriever and (not matched_qa or is_tech_query):
             vector_context = self.vector_retriever.search(clean_msg, limit=2)
 
         combined_context = context_fact
         if vector_context:
-            combined_context = f"{context_fact}\n\nIngested Codebase Context:\n{vector_context}"
+            combined_context = f"{context_fact}\n\nTechnical Code Reference:\n{vector_context}"
 
         direct_question = self.transform_query_to_direct_dialog(clean_msg)
         system_instruction = self.build_system_instruction(role_type, target_company)
@@ -558,7 +587,8 @@ class PersonaDialogEngine:
             f"Context facts:\n{combined_context}\n\n"
             f"Interviewer asks: \"{direct_question}\"\n\n"
             f"Respond conversationally as Andrew Yeo in the first-person singular ('I', 'my'), as an independent solo architect ('one-man army'). "
-            f"Never use 'we', 'our', or 'our team'. Speak naturally in 2 to 3 flowing paragraphs without bullet points or numbered lists:"
+            f"Never use 'we', 'our', or 'our team'. Speak naturally in 2 to 3 flowing paragraphs without bullet points or numbered lists. "
+            f"IMPORTANT: Output ONLY your spoken conversational response. Never echo, copy, or output context headers, file paths, YAML, or raw data blocks."
         )
 
         raw_output = self.adapter.generate(prompt, system_instruction)
