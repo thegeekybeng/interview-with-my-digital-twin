@@ -31,5 +31,7 @@ data/
 .pytest_cache/
 .DS_Store
 
-# AI Architecture Repository — internal governance notes, gitignored
+# AI Architecture Repository & local handovers — internal governance notes, gitignored
 .ai-arch/
+HANDOFF.md
+

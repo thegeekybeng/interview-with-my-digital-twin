@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Shield, CheckCircle, AlertTriangle, 
   User, Briefcase, Mail, Link as LinkIcon, 
-  Loader2, Sparkles, LogOut, ArrowRight
+  Loader2, Sparkles, LogOut, ArrowRight,
+  Lock, ShieldCheck, ArrowLeft, RefreshCw
 } from 'lucide-react';
 import { MermaidBlock } from './components/MermaidBlock';
 
@@ -209,8 +210,8 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  const handleRequestOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRequestOTP = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!name || !company || !email) return;
     setLoading(true);
     try {
@@ -471,7 +472,7 @@ export default function App() {
   // 1. Blocked Overlay Screen View
   if (blocked) {
     return (
-      <div className="w-[480px] p-8 glass-panel border-red-900/30 text-center animate-fade-in">
+      <div className="gateway-card animate-fade-in text-center" style={{ maxWidth: '480px' }}>
         <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
         <h2 className="text-xl font-bold mb-2">Access Suspended</h2>
         <p className="text-sm text-slate-400 mb-6 leading-relaxed">
@@ -479,48 +480,57 @@ export default function App() {
         </p>
 
         {!appealSubmitted ? (
-          <form onSubmit={handleSendAppeal} className="space-y-4 text-left">
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Full Name</label>
+          <form onSubmit={handleSendAppeal} className="gateway-form text-left">
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title"><User className="w-3-5 h-3-5 text-blue-400" /> Full Name</span>
+              </label>
               <input 
                 type="text" 
                 required 
                 value={appealName} 
                 onChange={e => setAppealName(e.target.value)} 
-                className="w-full glass-input" 
+                className="gateway-input" 
               />
             </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Corporate Email</label>
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title"><Mail className="w-3-5 h-3-5 text-blue-400" /> Corporate Email</span>
+              </label>
               <input 
                 type="email" 
                 required 
                 value={appealEmail} 
                 onChange={e => setAppealEmail(e.target.value)} 
-                className="w-full glass-input" 
+                className="gateway-input" 
               />
             </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Contact Number</label>
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title">Contact Number</span>
+              </label>
               <input 
                 type="text" 
                 required 
                 value={appealContact} 
                 onChange={e => setAppealContact(e.target.value)} 
-                className="w-full glass-input" 
+                className="gateway-input" 
               />
             </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Reason for Security Violations</label>
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title">Reason for Appeal</span>
+              </label>
               <textarea 
                 required 
                 rows={3} 
                 value={appealReason} 
                 onChange={e => setAppealReason(e.target.value)} 
-                className="w-full glass-input resize-none" 
+                className="gateway-input" 
+                style={{ resize: 'none' }}
               />
             </div>
-            <button type="submit" disabled={loading} className="w-full glass-button flex items-center justify-center gap-2">
+            <button type="submit" disabled={loading} className="gateway-submit-btn">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Revalidation Request'}
             </button>
           </form>
@@ -540,88 +550,141 @@ export default function App() {
   // 2. Gateway Welcome Sign-in card views
   if (!verified) {
     return (
-      <div className="w-[420px] p-8 glass-panel animate-fade-in">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-blue-900/30 rounded-lg border border-blue-500/20">
+      <div className="gateway-card animate-fade-in">
+        {/* Gateway Header */}
+        <div className="gateway-header">
+          <div className="gateway-icon-badge">
             <Sparkles className="w-6 h-6 text-blue-400" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold">Andrew Yeo's Digital Twin</h1>
-            <p className="text-xs text-slate-400">Technical Interview Gateway</p>
+          <div className="flex-1">
+            <div className="gateway-badge">
+              <span className="sys-status-indicator online"></span>
+              Live Gateway
+            </div>
+            <h1 className="gateway-title">Andrew Yeo's Digital Twin</h1>
+            <p className="gateway-subtitle">Technical Portfolio & Architectural Dialog Engine</p>
           </div>
         </div>
 
         {!otpSent ? (
-          <form onSubmit={handleRequestOTP} className="space-y-4">
-            <div>
-              <label className="text-xs text-slate-400 block mb-1 flex items-center gap-1"><User className="w-3 h-3" /> Full Name</label>
-              <input 
-                type="text" 
-                required 
-                placeholder="Sarah Recruiter" 
-                value={name} 
-                onChange={e => setName(e.target.value)} 
-                className="w-full glass-input" 
-              />
+          <form onSubmit={handleRequestOTP} className="gateway-form">
+            {/* Identity Details: Name & Organization side-by-side */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="form-group">
+                <label className="form-label">
+                  <span className="form-label-title"><User className="w-3-5 h-3-5 text-blue-400" /> Full Name</span>
+                </label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="Sarah Recruiter" 
+                  value={name} 
+                  onChange={e => setName(e.target.value)} 
+                  className="gateway-input" 
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">
+                  <span className="form-label-title"><Briefcase className="w-3-5 h-3-5 text-blue-400" /> Organization</span>
+                </label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="Google" 
+                  value={company} 
+                  onChange={e => setCompany(e.target.value)} 
+                  className="gateway-input" 
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1 flex items-center gap-1"><Briefcase className="w-3 h-3" /> Company</label>
-              <input 
-                type="text" 
-                required 
-                placeholder="Google" 
-                value={company} 
-                onChange={e => setCompany(e.target.value)} 
-                className="w-full glass-input" 
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1 flex items-center gap-1"><Mail className="w-3 h-3" /> Professional Email</label>
+
+            {/* Email Address */}
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title"><Mail className="w-3-5 h-3-5 text-blue-400" /> Professional Email</span>
+                <span className="form-label-meta">OTP delivered here</span>
+              </label>
               <input 
                 type="email" 
                 required 
                 placeholder="sarah@google.com" 
                 value={email} 
                 onChange={e => setEmail(e.target.value)} 
-                className="w-full glass-input" 
+                className="gateway-input" 
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Your Role</label>
-                <select value={role} onChange={e => setRole(e.target.value)} className="w-full glass-input">
-                  <option value="HR Recruiter">HR Recruiter (Max 15 Mins)</option>
-                  <option value="Technical Interviewer">Technical Interviewer (Max 30 Mins)</option>
-                  <option value="Founder/Builder Collaborator">Founder/Builder (Max 40 Mins)</option>
-                  <option value="Media / Press">Media / Press (Max 20 Mins)</option>
-                  <option value="Cultural Fit Interview">Cultural Fit (Max 20 Mins)</option>
-                  <option value="Others / Guest">Others / Guest (Max 3 Qs)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3" /> LinkedIn (Opt)</label>
-                <input 
-                  type="text" 
-                  placeholder="linkedin.com/in/..." 
-                  value={linkedin} 
-                  onChange={e => setLinkedin(e.target.value)} 
-                  className="w-full glass-input" 
-                />
-              </div>
+
+            {/* Interaction Track & Quotas */}
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title"><ShieldCheck className="w-3-5 h-3-5 text-blue-400" /> Interaction Track</span>
+                <span className="form-label-meta">Tier limits apply</span>
+              </label>
+              <select value={role} onChange={e => setRole(e.target.value)} className="gateway-select">
+                <option value="HR Recruiter">HR Recruiter (Max 15 Mins — Experience & Qualifications)</option>
+                <option value="Technical Interviewer">Technical Interviewer (Max 30 Mins — Architecture & Deep Dive)</option>
+                <option value="Founder/Builder Collaborator">Founder / Builder (Max 40 Mins — Strategy & Tech Stack)</option>
+                <option value="Cultural Fit Interview">Cultural Fit Interview (Max 20 Mins — Leadership & Team)</option>
+                <option value="Media / Press">Media / Press (Max 20 Mins — Executive Briefing)</option>
+                <option value="Others / Guest">Others / Guest (Max 3 Qs — Quick Overview)</option>
+              </select>
             </div>
-            <button type="submit" disabled={loading} className="w-full glass-button flex items-center justify-center gap-2 mt-2">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Request Verification Code <ArrowRight className="w-4 h-4" /></>}
+
+            {/* LinkedIn Profile */}
+            <div className="form-group">
+              <label className="form-label">
+                <span className="form-label-title"><LinkIcon className="w-3-5 h-3-5 text-slate-400" /> LinkedIn Profile</span>
+                <span className="form-label-meta">Optional</span>
+              </label>
+              <input 
+                type="text" 
+                placeholder="linkedin.com/in/username" 
+                value={linkedin} 
+                onChange={e => setLinkedin(e.target.value)} 
+                className="gateway-input" 
+              />
+            </div>
+
+            {/* Submission CTA */}
+            <button type="submit" disabled={loading} className="gateway-submit-btn">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Requesting Verification Code...</span>
+                </>
+              ) : (
+                <>
+                  <span>Request Verification Code</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
+
+            {/* Security Guarantee */}
+            <div className="gateway-footer-note">
+              <Lock className="w-3 h-3 text-slate-500" />
+              <span>Zero-Trust Ephemeral Session • No Tracking Cookies • Rate Protected</span>
+            </div>
           </form>
         ) : (
-          <form onSubmit={handleVerifyOTP} className="space-y-4">
-            <div className="p-4 bg-blue-950/20 rounded-lg border border-blue-900/30 text-center mb-2">
-              <Mail className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-              <h3 className="text-sm font-semibold">Verification Code Sent</h3>
-              <p className="text-xs text-slate-400 mt-1">We sent a 6-digit OTP code to: <strong>{email}</strong></p>
+          <form onSubmit={handleVerifyOTP} className="gateway-form">
+            <div className="otp-dispatch-card">
+              <div className="w-10 h-10 rounded-full bg-blue-900/40 border border-blue-500/30 flex items-center justify-center mx-auto mb-2 text-blue-400">
+                <Mail className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-white">One-Time Passcode Dispatched</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Enter the 6-digit verification code transmitted to:
+              </p>
+              <div className="otp-target-pill">
+                <span>{email}</span>
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">Enter 6-Digit OTP</label>
+
+            <div className="form-group">
+              <label className="form-label justify-center text-center">
+                <span className="form-label-title text-slate-300">Enter 6-Digit Passcode</span>
+              </label>
               <input 
                 type="text" 
                 required 
@@ -629,15 +692,47 @@ export default function App() {
                 placeholder="123456" 
                 value={otpCode} 
                 onChange={e => setOtpCode(e.target.value)} 
-                className="w-full glass-input text-center text-lg tracking-widest font-mono" 
+                className="otp-input-field" 
+                autoFocus
               />
             </div>
-            <button type="submit" disabled={loading} className="w-full glass-button flex items-center justify-center gap-2">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & Launch Chat'}
+
+            <button type="submit" disabled={loading || otpCode.length < 6} className="gateway-submit-btn">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Authorizing Session...</span>
+                </>
+              ) : (
+                <>
+                  <span>Verify & Launch Gateway</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
-            <button type="button" onClick={() => setOtpSent(false)} className="w-full text-xs text-slate-400 hover:text-white mt-1 text-center block">
-              Back to form
-            </button>
+
+            <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+              <button 
+                type="button" 
+                onClick={() => setOtpSent(false)} 
+                className="inline-flex items-center gap-1 text-slate-400 hover:text-white transition-colors cursor-pointer bg-transparent border-0"
+              >
+                <ArrowLeft className="w-3-5 h-3-5" /> Change Details
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRequestOTP()}
+                disabled={loading}
+                className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors cursor-pointer bg-transparent border-0"
+              >
+                <RefreshCw className="w-3 h-3" /> Resend Code
+              </button>
+            </div>
+
+            <div className="gateway-footer-note">
+              <Shield className="w-3 h-3 text-slate-500" />
+              <span>Passcode expires in 10 minutes • Single-device session</span>
+            </div>
           </form>
         )}
       </div>
