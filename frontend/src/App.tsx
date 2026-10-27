@@ -213,13 +213,18 @@ export default function App() {
       const res = await fetch(`${API_URL}/api/request_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, company, email, role, linkedin })
+        body: JSON.stringify({ name, company, email, role, role_type: role, linkedin })
       });
       if (res.ok) {
         setOtpSent(true);
       } else {
-        const data = await res.json();
-        alert(data.detail || 'Failed to dispatch verification code.');
+        const data = await res.json().catch(() => null);
+        const msg = typeof data?.detail === 'string'
+          ? data.detail
+          : Array.isArray(data?.detail)
+            ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ')
+            : (data?.message || 'Failed to dispatch verification code.');
+        alert(msg);
       }
     } catch (err) {
       alert('Failed to connect to verification server. Ensure the backend is running.');
@@ -242,7 +247,8 @@ export default function App() {
           ip_address: '127.0.0.1',
           name,
           company,
-          role
+          role,
+          role_type: role
         })
       });
       if (res.ok) {
@@ -263,8 +269,13 @@ export default function App() {
           }
         ]);
       } else {
-        const data = await res.json();
-        alert(data.detail || 'Verification code does not match.');
+        const data = await res.json().catch(() => null);
+        const msg = typeof data?.detail === 'string'
+          ? data.detail
+          : Array.isArray(data?.detail)
+            ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ')
+            : (data?.message || 'Verification code does not match.');
+        alert(msg);
       }
     } catch (err) {
       alert('Verification verification failed.');

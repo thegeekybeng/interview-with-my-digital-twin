@@ -21,16 +21,24 @@ class OTPRequest(BaseModel):
     name: str
     company: str
     email: str
-    role: str
+    role: str = "Visitor"
+    role_type: str = ""
     linkedin: str = ""
+
+    def get_role(self) -> str:
+        return self.role_type or self.role or "Visitor"
 
 class OTPVerify(BaseModel):
     email: str
     otp_code: str
-    ip_address: str
+    ip_address: str = "127.0.0.1"
     name: str = "Visitor"
     company: str = "Company"
     role: str = "Others / Guest"
+    role_type: str = ""
+
+    def get_role(self) -> str:
+        return self.role_type or self.role or "Others / Guest"
 
 class ChatRequest(BaseModel):
     message: str
