@@ -107,7 +107,16 @@ def test_persona_dialog_engine_offline():
     assert "thegeekybeng@gmail.com" not in sanitized_pii
     assert "[REDACTED_PHONE]" in sanitized_pii
     assert "[REDACTED_EMAIL]" in sanitized_pii
-    print("✓ Phone and email PII redaction verified.")
+    # 9. Test trimming of trailing dangling cut-off fragment (e.g. Predictable Token Economics: I)
+    cutoff_sample = (
+        "My systems are designed in a way that minimizes complexity while maximizing efficiency and scalability. "
+        "Each layer is carefully integrated to create seamless workflows. "
+        "Predictable Token Economics: I"
+    )
+    trimmed = engine.clean_robotics(cutoff_sample)
+    assert not trimmed.endswith(": I")
+    assert trimmed.endswith("seamless workflows.")
+    print("✓ Dangling cut-off fragment trimming verified.")
 
     print("All PersonaDialogEngine unit tests PASSED successfully!")
 

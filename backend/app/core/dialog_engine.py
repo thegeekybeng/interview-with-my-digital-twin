@@ -40,7 +40,7 @@ class OllamaInferenceAdapter(InferenceAdapter):
                 "repeat_penalty": 1.3,
                 "repeat_last_n": 256,
                 "top_p": 0.9,
-                "num_predict": 350
+                "num_predict": 650
             }
         }
         try:
@@ -442,6 +442,9 @@ class PersonaDialogEngine:
             (r"\b(?:[Ww]e have created|[Ww]e created)\b", "I created"),
             (r"\b(?:[Ww]e ensure)\b", "I ensure"),
             (r"\b(?:[Ww]e can provide|[Ww]e provide)\b", "I provide"),
+            (r"\b(?:[Ww]e can create|[Ww]e create)\b", "I create"),
+            (r"\b(?:[Ww]e can)\b", "I can"),
+            (r"\b(?:[Ww]e will)\b", "I will"),
             (r"\b(?:[Ww]e understand)\b", "I understand"),
             (r"\b(?:[Ww]e tailor)\b", "I tailor"),
             (r"\b(?:[Ww]e focus)\b", "I focus"),
@@ -474,6 +477,13 @@ class PersonaDialogEngine:
         text = re.sub(r"\bTheGeekyBeng\b", "Andrew Yeo", text, flags=re.IGNORECASE)
 
         text = text.strip()
+
+        # Truncate dangling, cut-off sentence fragment if text ends mid-sentence
+        if text and not text.endswith(('.', '!', '?', '"', "'", '```', '—', '’')):
+            last_punct = max(text.rfind('. '), text.rfind('.\n'), text.rfind('! '), text.rfind('? '))
+            if last_punct > len(text) * 0.4:
+                text = text[:last_punct + 1].strip()
+
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
         return text
@@ -495,7 +505,9 @@ class PersonaDialogEngine:
             f"Speak exclusively in the first-person singular: 'I', 'me', 'my', 'myself'. Never say 'we', 'our', 'us', or 'our team'. You are a solo builder.\n"
             f"{cfg['narrative_focus']}\n"
             f"Speak naturally, warmly, and compellingly as a real person talking in the room. Directly answer the core semantics of what the interviewer asked.\n"
-            f"Never start your answer with 'As...', 'Certainly', 'Sure', 'As an AI', 'As a...', 'As the...', 'Digital Twin', or 'TheGeekyBeng'. Never output bullet points, numbered lists, or bold markdown outline headings. Flow smoothly in 2 to 3 natural conversational paragraphs."
+            f"Be concise, impactful, and direct: limit your response strictly to 1 or 2 focused paragraphs (under 160 words). Never ramble, list endless points, or leave sentences unfinished.\n"
+            f"Do NOT write programming code blocks or code syntax snippets unless the interviewer explicitly asked for code with words like 'code', 'write code', or 'snippet'. Focus on architectural reasoning and practical systems impact.\n"
+            f"Never start your answer with 'As...', 'Certainly', 'Sure', 'As an AI', 'As a...', 'As the...', 'Digital Twin', or 'TheGeekyBeng'. Never output bullet points, numbered lists, or bold markdown outline headings."
         )
 
     DISCLAIMER_KEYWORDS = [
@@ -586,9 +598,10 @@ class PersonaDialogEngine:
         prompt = (
             f"Context facts:\n{combined_context}\n\n"
             f"Interviewer asks: \"{direct_question}\"\n\n"
-            f"Respond conversationally as Andrew Yeo in the first-person singular ('I', 'my'), as an independent solo architect ('one-man army'). "
-            f"Never use 'we', 'our', or 'our team'. Speak naturally in 2 to 3 flowing paragraphs without bullet points or numbered lists. "
-            f"IMPORTANT: Output ONLY your spoken conversational response. Never echo, copy, or output context headers, file paths, YAML, or raw data blocks."
+            f"Respond conversationally as Andrew Yeo in the first-person singular ('I', 'my') as an independent solo architect ('one-man army'). "
+            f"Never use 'we', 'our', or 'our team'. Be concise, sharp, and focused in 1 to 2 paragraphs (maximum 150 words). "
+            f"Do NOT write code blocks unless specifically requested for code. "
+            f"Conclude your thoughts cleanly within the word limit. Output ONLY your spoken conversational response."
         )
 
         raw_output = self.adapter.generate(prompt, system_instruction)
