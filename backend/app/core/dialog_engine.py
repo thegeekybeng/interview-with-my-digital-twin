@@ -24,19 +24,23 @@ class OllamaInferenceAdapter(InferenceAdapter):
 
     def generate(self, prompt: str, system_instruction: str) -> str:
         url = f"{self.host}/api/chat"
+        # Anchor persona with conversational few-shot turn to prevent small model from hallucinating or disclaiming
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": "Can you share your general approach to systems architecture?"},
+            {"role": "assistant", "content": "In my 18 years in engineering, I have always believed that the best architecture is the one that solves real operational problems without creating unnecessary complexity. I focus heavily on privacy-first local inference, strong typing, and zero-trust security boundaries so systems remain maintainable and secure."},
+            {"role": "user", "content": prompt}
+        ]
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": prompt}
-            ],
+            "messages": messages,
             "stream": False,
             "options": {
-                "temperature": 0.2,
-                "repeat_penalty": 1.35,
+                "temperature": 0.25,
+                "repeat_penalty": 1.3,
                 "repeat_last_n": 256,
                 "top_p": 0.9,
-                "num_predict": 300
+                "num_predict": 350
             }
         }
         try:
@@ -83,8 +87,17 @@ class QARetriever:
             except Exception as e:
                 print(f"[QARetriever Load Error]: {e}")
 
+    STOPWORDS = {
+        "what", "is", "are", "his", "your", "my", "the", "a", "an", "to", "for", "in",
+        "on", "with", "and", "of", "tell", "me", "about", "can", "you", "he", "him",
+        "how", "do", "does", "did", "have", "has", "had", "would", "could", "should",
+        "this", "that", "these", "those", "from", "at", "by", "or", "so", "if"
+    }
+
     def _tokenize(self, text: str) -> List[str]:
-        return re.findall(r'\w+', text.lower())
+        words = re.findall(r'\w+', text.lower())
+        filtered = [w for w in words if w not in self.STOPWORDS]
+        return filtered if filtered else words
 
     def _cosine_similarity(self, vec1: Counter, vec2: Counter) -> float:
         intersection = set(vec1.keys()) & set(vec2.keys())
@@ -102,6 +115,9 @@ class QARetriever:
 
         # Intent keyword mapping for high-precision matching
         keyword_targets = [
+            (["technical skill", "technical skills", "key skills", "key technical", "tech stack", "technologies", "what are your skills", "what skills", "core skills", "programming languages"], "qa_key_technical_skills"),
+            (["genai", "generative ai", "experience with ai", "ai experience", "experience with genai", "genai experience", "genai track record", "genai work"], "qa_experience_with_genai"),
+            (["background", "career journey", "career background", "tell me about your background", "tell me about andrew's background", "walk me through your background", "your journey", "career story"], "qa_career_background_journey"),
             (["architect role", "architect roles", "roles has he held", "roles have you held", "architecture position", "architect positions", "what roles"], "qa_career_architect_roles"),
             (["team leadership", "leadership style", "lead a team", "leads a team", "engineering management", "management style", "manage engineers", "mentoring"], "qa_team_leadership"),
             (["nutristar", "nutri-grade", "nutrigrade", "nutrition compliance", "food compliance"], "qa_project_nutristar"),
@@ -188,99 +204,53 @@ class PersonaDialogEngine:
     """
 
     DEFAULT_FACT = (
-        "I am Andrew Yeo (TheGeekyBeng), GenAI Lead and Solutions Architect specializing in local AI inference pipelines, "
+        "I am Andrew Yeo, GenAI Lead and Solutions Architect specializing in local AI inference pipelines, "
         "agentic orchestration, enterprise RAG platforms, and secure multi-agent systems."
     )
 
     ROLE_SCHEMAS = {
         "HR Recruiter": {
             "title": "Executive HR Recruiter & Talent Partner",
-            "focus": (
-                "employment trajectory, 18+ years of engineering leadership, team scaling, qualifications, "
-                "cross-functional collaboration, hiring standards, and executive communication"
+            "narrative_focus": (
+                "Focus on my 18+ years of engineering leadership, team scaling, executive presence, "
+                "and proven track record bridging technical execution with strategic enterprise value."
             ),
-            "schema": (
-                "Structure your response in 2 concise, polished narrative paragraphs in the first person ('I', 'my'). "
-                "Highlight career milestones (GenAI Lead, Solutions Architect, Senior Technical Lead) and proven track record. "
-                "Demonstrate executive presence, stability, and cultural alignment without generic buzzwords."
-            ),
-            "negative_constraints": (
-                "NEVER give generic 3rd-person recruitment advice. NEVER say 'A Senior Technical Lead typically leads...' "
-                "or 'Based on the facts provided'. NEVER produce repeating numbered lists or iterate role titles."
-            )
         },
         "Technical Interviewer": {
             "title": "Senior Technical Architect & Systems Evaluator",
-            "focus": (
-                "deep systems architecture, local inference pipelines (Ollama, Metal MPS, Apple Silicon unified memory), "
-                "PostgreSQL pgvector HNSW indexing, RAG retrieval architectures, zero-trust container networking, "
-                "caching topologies, and production TypeScript / Python stacks"
+            "narrative_focus": (
+                "Focus on deep systems architecture, local inference pipelines (Ollama on Apple Silicon unified memory with Metal MPS), "
+                "PostgreSQL pgvector HNSW indexing, RAG retrieval architectures, zero-trust container security (Docker, Tailscale mesh), "
+                "and production full-stack TypeScript/Python engineering."
             ),
-            "schema": (
-                "Provide an authoritative, highly technical response citing concrete technologies (e.g. pgvector, nomic-embed-text, "
-                "Docker, Tailscale, Next.js 15, FastAPI). If explaining multi-component topologies, include a concise Mermaid.js diagram. "
-                "Ground all claims in concrete architectural trade-offs."
-            ),
-            "negative_constraints": (
-                "NEVER output high-level superficial summaries. NEVER produce numbered repetition loops (e.g. repeating 'Architect' across lines). "
-                "NEVER speak in third person."
-            )
         },
         "Founder/Builder Collaborator": {
             "title": "Founder, Co-Founder & Technical Builder",
-            "focus": (
-                "zero-to-one MVP velocity, rapid prototyping, pragmatic tech stack selection, build vs. buy trade-offs, "
-                "token economics and cost minimization, and resilient full-stack architecture"
+            "narrative_focus": (
+                "Focus on zero-to-one MVP velocity, rapid prototyping, pragmatic tech stack selection, "
+                "token economics, cost minimization, and resilient full-stack delivery without technical debt."
             ),
-            "schema": (
-                "Respond with an agile, high-velocity builder mindset. Explain how to deliver products fast without accumulating "
-                "crippling technical debt. Focus on measurable ROI, speed to market, and pragmatic architectural boundaries."
-            ),
-            "negative_constraints": (
-                "NEVER produce academic or bureaucratic commentary. Avoid unnecessary abstraction. Speak directly as an experienced builder."
-            )
         },
         "Cultural Fit Interview": {
             "title": "Cultural Fit & Engineering Culture Interviewer",
-            "focus": (
-                "servant leadership, psychological safety, developer mentorship, constructive pair programming, "
-                "handling conflict, blameless post-mortems, and team adaptability under pressure"
+            "narrative_focus": (
+                "Focus on empathetic servant leadership, psychological safety, active pair programming, "
+                "developer mentorship, and blameless post-mortems."
             ),
-            "schema": (
-                "Share authentic first-person stories reflecting personal values: empathy, leading by example, active mentorship, "
-                "and creating an open environment where engineers thrive and take calculated risks."
-            ),
-            "negative_constraints": (
-                "CRITICAL: NEVER say 'I can provide general insights into how a Senior Technical Lead might lead' or give textbook definitions. "
-                "You ARE Andrew Yeo. Speak directly in first-person: 'In my leadership, I...'"
-            )
         },
         "Media / Press": {
             "title": "Technology Journalist & Media Representative",
-            "focus": (
-                "AI privacy, edge compute sovereignty, responsible AI governance (EU AI Act, Singapore AIGF), "
-                "open-weights vs proprietary AI ecosystems, and macroeconomic AI trends"
+            "narrative_focus": (
+                "Focus on AI privacy, edge compute sovereignty, responsible AI governance (Singapore AIGF, EU AI Act), "
+                "and enterprise data protection."
             ),
-            "schema": (
-                "Respond in a professional, media-savvy, diplomatic tone suitable for public citation. "
-                "Highlight privacy-first local inference, responsible AI safeguards, and enterprise data sovereignty."
-            ),
-            "negative_constraints": (
-                "Do not make controversial, unvetted, or partisan statements. Maintain an objective, authoritative executive voice."
-            )
         },
         "Others / Guest": {
-            "title": "General Visitor & Technology Enthusiast",
-            "focus": (
-                "high-level career overview, flagship open-source and civic applications (MPS Connect, Nutristar, The Perfect Fit, "
-                "PII Shield, Homelab Telemetry), and professional collaboration avenues"
+            "title": "Visitor & Technology Enthusiast",
+            "narrative_focus": (
+                "Provide an engaging, welcoming, and succinct narrative of my career, flagship projects "
+                "(MPS-Connect, Nutristar, The Perfect Fit, PC2E), and core architectural focus."
             ),
-            "schema": (
-                "Provide an engaging, welcoming, and succinct overview of Andrew Yeo's career, flagship projects, and core areas of expertise."
-            ),
-            "negative_constraints": (
-                "Keep responses under 3 paragraphs. Do not overwhelm with minutiae unless asked. Avoid repetitive loops."
-            )
         }
     }
 
@@ -300,8 +270,11 @@ class PersonaDialogEngine:
     def transform_query_to_direct_dialog(query: str) -> str:
         """Converts third-person interview queries into direct second-person dialogue for the model."""
         q = query.strip()
+        q = re.sub(r"\b(what are his|what're his)\b", "what are your", q, flags=re.IGNORECASE)
         q = re.sub(r"\b(what is his|what's his)\b", "what is your", q, flags=re.IGNORECASE)
         q = re.sub(r"\btell me about his\b", "tell me about your", q, flags=re.IGNORECASE)
+        q = re.sub(r"\btell me about andrew's\b", "tell me about your", q, flags=re.IGNORECASE)
+        q = re.sub(r"\btell me about andrew\b", "tell me about your background", q, flags=re.IGNORECASE)
         q = re.sub(r"\bhow does he\b", "how do you", q, flags=re.IGNORECASE)
         q = re.sub(r"\bhow he leads\b", "how you lead", q, flags=re.IGNORECASE)
         q = re.sub(r"\bwhat architect roles has he held\b", "what architect roles have you held", q, flags=re.IGNORECASE)
@@ -335,7 +308,6 @@ class PersonaDialogEngine:
         # Check for incrementing number loops (e.g. 1. ... 2. ... 3. ... 4. ... 5. ...)
         nums = [int(m) for m in re.findall(r"^(\d+)\.", text, re.MULTILINE)]
         if len(nums) >= 4:
-            # Check if numbers are sequential
             is_seq = all(nums[i] + 1 == nums[i+1] for i in range(len(nums)-1))
             if is_seq and len(nums) >= 5:
                 return True
@@ -356,8 +328,21 @@ class PersonaDialogEngine:
         if not text:
             return ""
 
-        # Remove disclaimers and 3rd person meta-commentary
-        for _ in range(5):
+        # Remove disclaimers, meta-commentary, and third-person prefixes
+        for _ in range(6):
+            text = re.sub(r"^Certainly[!,.]?\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(
+                r"^As my identity is[^.\n]+(?:here's how you might answer this query:)?\s*",
+                "",
+                text,
+                flags=re.IGNORECASE
+            )
+            text = re.sub(
+                r"^Here's how you might answer[^.\n]*:\s*",
+                "",
+                text,
+                flags=re.IGNORECASE
+            )
             text = re.sub(
                 r"^I can provide (?:some )?(?:general )?insights into [^.\n]+(?:based on [^.\n]+)?\.\s*",
                 "",
@@ -383,13 +368,13 @@ class PersonaDialogEngine:
                 flags=re.IGNORECASE
             )
             text = re.sub(
-                r"^As an? (?:experienced )?(?:Executive )?(?:HR Recruiter|Talent Partner|Technical Interviewer|Founder|Builder|Journalist|Interviewer)[^,.]*[,.]?\s*",
+                r"^As an? (?:experienced )?(?:Senior )?(?:[A-Za-z\s&]+)?(?:Architect|Engineer|Lead|Evaluator|Partner|Recruiter|Founder|Builder|Interview)[^,.]*(?:at [^,.]+)?[,.]?\s*",
                 "",
                 text,
                 flags=re.IGNORECASE
             )
             text = re.sub(
-                r"^(?:Model,?\s*|As (?:Andrew Yeo|Andrew|the candidate|an Architect|a Solutions Architect|an AI language model|an AI designed by [^,]+|an AI Architect|the GenAI Lead|an AI),?\s*)",
+                r"^(?:Model,?\s*|As (?:Andrew Yeo|Andrew|TheGeekyBeng|TheGeekybeng|Andrew's Digital Twin|the candidate|an Architect|a Solutions Architect|an AI language model|an AI designed by [^,]+|an AI Architect|the GenAI Lead|an AI),?\s*)",
                 "",
                 text,
                 flags=re.IGNORECASE
@@ -408,13 +393,17 @@ class PersonaDialogEngine:
             )
             text = re.sub(r"^(?:or|however|but|also|additionally|furthermore)[,.]?\s*", "", text, flags=re.IGNORECASE)
 
+        # Replace any remaining TheGeekyBeng references with Andrew Yeo or remove if parenthetical
+        text = re.sub(r"\s*\(TheGeekyBeng\)", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bTheGeekyBeng\b", "Andrew Yeo", text, flags=re.IGNORECASE)
+
         text = text.strip()
         if text and text[0].islower():
             text = text[0].upper() + text[1:]
         return text
 
     def build_system_instruction(self, role_type: str, target_company: str) -> str:
-        """Maps visitor persona role to tailored, role-specific narrative guidelines and schemas."""
+        """Builds a direct first-person interview persona prompt tailored to the visitor's role."""
         normalized_role = "Others / Guest"
         for key in self.ROLE_SCHEMAS:
             if key.lower() in role_type.lower():
@@ -424,12 +413,13 @@ class PersonaDialogEngine:
         cfg = self.ROLE_SCHEMAS.get(normalized_role, self.ROLE_SCHEMAS["Others / Guest"])
 
         return (
-            f"YOUR IDENTITY: You are Andrew Yeo (TheGeekyBeng), GenAI Lead and Solutions Architect. "
-            f"You are speaking directly to a {cfg['title']} from {target_company}.\n"
-            f"AUDIENCE FOCUS: {cfg['focus']}.\n"
-            f"RESPONSE SCHEMA: {cfg['schema']}\n"
-            f"CRITICAL CONSTRAINTS: {cfg['negative_constraints']}\n"
-            f"Always speak in the authentic first person ('I', 'my') as Andrew Yeo."
+            f"You are Andrew Yeo speaking directly in an executive interview with a {cfg['title']} from {target_company}.\n"
+            f"You have over 18 years of technology leadership and systems architecture experience.\n"
+            f"Always respond directly in the first person ('I', 'my') as a real person speaking in the room.\n"
+            f"Deliver an authentic, warm, compelling, and conversational narrative that directly addresses the core meaning of what the interviewer asked.\n"
+            f"{cfg['narrative_focus']}\n"
+            f"Never speak in the third person. Never say 'As an AI', 'As TheGeekyBeng', 'As Andrew Yeo', 'Digital Twin', or 'Here is how you might answer'.\n"
+            f"Never output bullet points, numbered lists, or bold outline headers. Speak naturally in 2 to 3 flowing conversational paragraphs."
         )
 
     DISCLAIMER_KEYWORDS = [
@@ -449,6 +439,20 @@ class PersonaDialogEngine:
         "model,",
         "as an ai",
         "as andrew yeo",
+        "as my identity is",
+        "here's how you might answer",
+        "as thegeekybeng",
+        "thegeekybeng",
+        "andrew's digital twin",
+        "digital twin",
+        "anthropic",
+        "openai",
+        "microsoft",
+        "direct3d",
+        "in 1986",
+        "google cloud platform",
+        "corporations like",
+        "born as part of",
         "don't have",
         "do not have",
         "ai language model",
@@ -494,9 +498,9 @@ class PersonaDialogEngine:
         direct_question = self.transform_query_to_direct_dialog(clean_msg)
         system_instruction = self.build_system_instruction(role_type, target_company)
         prompt = (
-            f"Context: {combined_context}\n\n"
-            f"Query: {direct_question}\n\n"
-            f"Direct Answer:"
+            f"Context facts:\n{combined_context}\n\n"
+            f"Interviewer asks: \"{direct_question}\"\n\n"
+            f"Answer conversationally as Andrew Yeo in first person:"
         )
 
         raw_output = self.adapter.generate(prompt, system_instruction)

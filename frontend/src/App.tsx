@@ -200,7 +200,7 @@ export default function App() {
       setMessages([
         {
           sender: 'agent',
-          text: `Hello ${savedName || 'Visitor'}! I am Andrew's Digital Twin. Ask me anything about his technical repositories, resume, or engineering capabilities.`
+          text: `Hello ${savedName || 'there'}! I'm Andrew Yeo. Ask me anything about my architecture experience, technical projects, or engineering leadership.`
         }
       ]);
     }
@@ -270,7 +270,7 @@ export default function App() {
         setMessages([
           {
             sender: 'agent',
-            text: `Hello ${name}! Access tier: ${data.access_tier}. Ask me anything about Andrew's projects.`
+            text: `Hello ${name}! Access tier: ${data.access_tier}. Ask me anything about my technical projects, architecture experience, or engineering leadership.`
           }
         ]);
       } else {
