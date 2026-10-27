@@ -14,8 +14,8 @@ COPY app/ ./app/
 
 EXPOSE 8000
 
-ENV OLLAMA_URL=http://100.64.0.1:11434
-ENV PG_DSN=postgresql://postgres:postgres@localhost:5432/your_pgdb_name
+ENV OLLAMA_URL=http://localhost:11434
+ENV PG_DSN=postgresql://postgres:postgres@localhost:5432/twin_db
 ENV TRACKER_DB=abuse_tracker.db
 ENV PORT=8000
 

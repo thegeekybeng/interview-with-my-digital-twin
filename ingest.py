@@ -5,7 +5,7 @@ import requests
 import psycopg2
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-PG_DSN = os.getenv("PG_DSN", "postgresql://postgres:postgres@localhost:5432/your_pgdb_name")
+PG_DSN = os.getenv("PG_DSN", "postgresql://postgres:postgres@localhost:5432/twin_db")
 EMBEDDING_MODEL = "nomic-embed-text"
 
 # File extensions to parse
@@ -27,7 +27,7 @@ IGNORE_FILES = {
 
 def get_embedding(text):
     """
-    Requests the vector embedding representation from Ollama on the M4 Pro.
+    Requests the vector embedding representation from Ollama.
     Supports both modern /api/embed and legacy /api/embeddings endpoints.
     """
     # 1. Try modern /api/embed endpoint

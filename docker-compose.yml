@@ -12,10 +12,10 @@ services:
       - ./data:/app/data
     environment:
       - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
-      - PG_DSN=${PG_DSN:-postgresql://postgres:postgres@localhost:5432/your_pgdb_name}
+      - PG_DSN=${PG_DSN:-postgresql://postgres:postgres@localhost:5432/twin_db}
       - TRACKER_DB=/app/data/abuse_tracker.db
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_HOST=${SMTP_HOST:-smtp.example.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
     restart: always

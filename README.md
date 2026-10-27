@@ -68,7 +68,7 @@ To ingest codebases and populate vectors in the pgvector database:
 
 ```bash
 # Export the database connection string
-export PG_DSN="postgresql://mps:password@host:port/dbname"
+export PG_DSN="postgresql://username:password@localhost:5432/twin_db"
 export OLLAMA_URL="http://localhost:11434"
 
 # Run the ingestion script
@@ -89,11 +89,11 @@ OLLAMA_KEEP_ALIVE=24h          # Keeps models loaded in GPU VRAM
 Create a `.env` file at the root containing the following credentials:
 
 ```env
-SMTP_HOST=smtp.gmail.com
+SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-PG_DSN=postgresql://postgres:postgres@localhost:5432/your_pgdb_name
+SMTP_USER=user@example.com
+SMTP_PASSWORD=placeholder_app_password
+PG_DSN=postgresql://postgres:postgres@localhost:5432/twin_db
 OLLAMA_URL=http://localhost:11434
 ```
 

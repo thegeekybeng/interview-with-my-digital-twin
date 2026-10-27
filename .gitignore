@@ -1,5 +1,7 @@
 # Python virtual envs
 backend/venv/
+.venv/
+venv/
 __pycache__/
 *.pyc
 
@@ -11,16 +13,23 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
-# Env credentials
+# Env credentials & secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cert
+credentials.json
 
 # Persistent data
 data/
 
-# Logs
+# Logs & testing
 *.log
+.pytest_cache/
+.DS_Store
 
 # AI Architecture Repository — internal governance notes, gitignored
 .ai-arch/

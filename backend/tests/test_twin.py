@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 # Check if real PG is running and accessible
-PG_DSN = os.getenv("PG_DSN", "postgresql://postgres:postgres@localhost:5432/your_pgdb_name")
+PG_DSN = os.getenv("PG_DSN", "postgresql://postgres:postgres@localhost:5432/twin_db")
 USE_REAL_PG = False
 try:
     conn = psycopg2.connect(PG_DSN, connect_timeout=2)
