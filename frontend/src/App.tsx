@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Shield, CheckCircle, AlertTriangle, 
   User, Briefcase, Mail, Link as LinkIcon, 
-  Loader2, Sparkles, LogOut, ArrowRight
+  Loader2, Sparkles, LogOut, ArrowRight, Cpu
 } from 'lucide-react';
 import { MermaidBlock } from './components/MermaidBlock';
 
@@ -648,56 +648,85 @@ export default function App() {
     <div className="app-container glass-panel animate-fade-in">
       {/* Sidebar Panel */}
       <div className="sidebar">
-        <div className="flex items-center gap-2 mb-6">
-          <Sparkles className="w-5 h-5 text-blue-400" />
-          <h2 className="text-sm font-bold text-white">Andrew Yeo Twin</h2>
+        <div className="sidebar-header">
+          <Sparkles className="w-5 h-5 text-blue-400 shrink-0" />
+          <div>
+            <h2 className="sidebar-title">Andrew Yeo Twin</h2>
+            <div className="sidebar-subtitle">Autonomous Portfolio Agent</div>
+          </div>
         </div>
 
-        <div className="flex-1 space-y-4">
-          <div className="p-3 bg-slate-950/40 rounded-lg border border-white/5">
-            <span className="text-xs text-slate-400 block mb-1">Visitor</span>
-            <span className="text-sm font-semibold text-white block">{name || 'Guest User'}</span>
-            <span className="text-xs text-slate-400 block">{company || 'Independent'}</span>
-          </div>
-
-          <div className="p-3 bg-slate-950/40 rounded-lg border border-white/5">
-            <span className="text-xs text-slate-400 block mb-1">Access Tier</span>
-            <div className="flex items-center gap-2 mt-1">
+        <div className="sidebar-content">
+          {/* 1. Visitor Profile Card */}
+          <div className="sidebar-card">
+            <div className="sidebar-card-header">
+              <span className="sidebar-card-label">
+                <User className="w-3.5 h-3.5 text-blue-400" />
+                Visitor Profile
+              </span>
               <span className={`status-badge ${accessTier === 'FULL' ? 'full' : 'restricted'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${accessTier === 'FULL' ? 'bg-blue-500 animate-pulse' : 'bg-amber-500'}`} />
-                {accessTier} Access
+                {accessTier}
               </span>
             </div>
-            <span className="text-[10px] text-slate-400 mt-2 block leading-relaxed">
-              {accessTier === 'FULL' 
-                ? 'Full RAG context search enabled across Andrew\'s active repositories.' 
-                : 'General bio/resume information. Ingested codebases locked.'}
-            </span>
+            <div className="sidebar-card-body">
+              <div className="meta-row">
+                <span className="meta-label">Name</span>
+                <span className="meta-value">{name || 'Guest User'}</span>
+              </div>
+              <div className="meta-row">
+                <span className="meta-label">Organization</span>
+                <span className="meta-pill">{company || 'Independent'}</span>
+              </div>
+              <div className="meta-row">
+                <span className="meta-label">Target Role</span>
+                <span className="meta-subvalue">{role || 'General Inquirer'}</span>
+              </div>
+              <div className={`meta-tier-desc ${accessTier === 'FULL' ? '' : 'restricted'}`}>
+                {accessTier === 'FULL' 
+                  ? 'Full RAG context search active across ingested code repositories.' 
+                  : 'Restricted Tier: General bio and high-level career queries only.'}
+              </div>
+            </div>
           </div>
 
-          {accessTier === 'FULL' && (
-            <div className="p-3 bg-slate-950/30 rounded-lg border border-blue-500/10 text-xs">
-              <span className="text-blue-400 font-semibold block mb-1">RAG Search Status</span>
-              <span className="text-slate-400 block">Postgres index: Cosine HNSW</span>
-              <span className="text-slate-400 block mt-1">Embeddings: 113 vectors loaded</span>
+          {/* 2. System Pipeline Card */}
+          <div className="sidebar-card">
+            <div className="sidebar-card-header">
+              <span className="sidebar-card-label">
+                <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                System Pipeline
+              </span>
+              <span className="sys-status-indicator">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                Live
+              </span>
             </div>
-          )}
-
-          {/* Dynamic Suggested Topics */}
-          <div className="p-3 bg-slate-950/40 rounded-lg border border-white/5">
-            <span className="text-xs text-slate-400 font-semibold block mb-2">Suggested Topics</span>
-            <div className="space-y-2">
-              {suggestions.map((q, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSuggestionClick(q)}
-                  disabled={loading}
-                  className="w-full text-left text-xs text-blue-400 hover:text-blue-300 bg-slate-950/30 hover:bg-slate-950/60 p-2 rounded border border-blue-500/10 transition-colors block"
-                >
-                  {q}
-                </button>
-              ))}
+            <div className="sidebar-card-body">
+              <div className="sys-telemetry-item">
+                <span className="sys-key">Inference Model</span>
+                <span className="sys-val">Andrew-Twin (LoRA)</span>
+              </div>
+              <div className="sys-telemetry-item">
+                <span className="sys-key">Base Model</span>
+                <span className="sys-val">Qwen2.5-Coder:1.5B</span>
+              </div>
+              <div className="sys-telemetry-item">
+                <span className="sys-key">Host Compute</span>
+                <span className="sys-val">M4 Pro (Local)</span>
+              </div>
+              <div className="sys-telemetry-item">
+                <span className="sys-key">RAG Vector Index</span>
+                <span className="sys-val">pgvector (Cosine)</span>
+              </div>
+              <div className="sys-telemetry-item">
+                <span className="sys-key">Context Vectors</span>
+                <span className="sys-val">{accessTier === 'FULL' ? '113 Embeddings' : 'Tier 1 Only'}</span>
+              </div>
+              <div className="sys-telemetry-item">
+                <span className="sys-key">Security Guard</span>
+                <span className="sys-val" style={{ color: '#4ade80' }}>PII Shield Active</span>
+              </div>
             </div>
           </div>
         </div>
@@ -752,8 +781,31 @@ export default function App() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Floating Suggested Topics (Hovering slightly above Chat Input) */}
+        {suggestions.length > 0 && (
+          <div className="suggestions-bar">
+            <div className="suggestions-header">
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <span>Suggested topics:</span>
+            </div>
+            <div className="suggestions-chips">
+              {suggestions.map((q, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSuggestionClick(q)}
+                  disabled={loading}
+                  className="suggestion-chip"
+                >
+                  <span>{q}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Chat Input */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 bg-slate-950/20 flex gap-3">
+        <form onSubmit={handleSendMessage} className="chat-input-form">
           <input 
             type="text" 
             ref={inputRef}
