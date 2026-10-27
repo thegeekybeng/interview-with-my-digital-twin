@@ -11,7 +11,9 @@ interface Message {
   text: string;
 }
 
-function parseInlineStyles(text: string): React.ReactNode[] {
+function parseInlineStyles(rawText: unknown): React.ReactNode[] {
+  const text = typeof rawText === 'string' ? rawText : '';
+  if (!text) return [];
   const boldParts = text.split(/(\*\*.*?\*\*)/g);
   return boldParts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -21,7 +23,8 @@ function parseInlineStyles(text: string): React.ReactNode[] {
   });
 }
 
-function parseMarkdown(text: string): React.ReactNode {
+function parseMarkdown(rawText: unknown): React.ReactNode {
+  const text = typeof rawText === 'string' ? rawText : (rawText ? JSON.stringify(rawText) : '');
   if (!text) return null;
   const parts = text.split(/(```[\s\S]*?(?:```|$))/g);
 
@@ -288,6 +291,12 @@ export default function App() {
     e.preventDefault();
     if (!currentMessage.trim() || loading) return;
 
+    const activeSessionId = sessionId || localStorage.getItem('visitor_session_id') || '';
+    if (!activeSessionId) {
+      setMessages(prev => [...prev, { sender: 'system', text: 'Active session not found. Please log in again.' }]);
+      return;
+    }
+
     const userText = currentMessage;
     setMessages(prev => [...prev, { sender: 'user', text: userText }]);
     setCurrentMessage('');
@@ -299,37 +308,54 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'X-Session-ID': activeSessionId
         },
-        body: JSON.stringify({ message: userText })
+        body: JSON.stringify({ 
+          message: userText,
+          session_id: activeSessionId
+        })
       });
 
       if (response.status === 403) {
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
         setBlocked(true);
-        const match = data.message.match(/ip=(\d+\.\d+\.\d+\.\d+)/);
+        const errorMsg = (typeof data?.message === 'string' ? data.message : null) || 'Access Suspended: Policy violation detected.';
+        const match = errorMsg.match(/ip=(\d+\.\d+\.\d+\.\d+)/);
         if (match) setBlockedIp(match[1]);
-        setMessages(prev => [...prev, { sender: 'system', text: data.message }]);
+        setMessages(prev => [...prev, { sender: 'system', text: errorMsg }]);
         setLoading(false);
         return;
       }
 
       if (!response.ok) {
-        const data = await response.json();
-        setMessages(prev => [...prev, { sender: 'system', text: data.detail || 'An error occurred.' }]);
+        const data = await response.json().catch(() => null);
+        const errorText = typeof data?.detail === 'string'
+          ? data.detail
+          : Array.isArray(data?.detail)
+            ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ')
+            : (data?.message || 'An error occurred.');
+        setMessages(prev => [...prev, { sender: 'system', text: errorText }]);
         setLoading(false);
         return;
       }
 
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json().catch(() => ({}));
         if (data.status === 'warning') {
           setSystemAlert(data.message);
           setMessages(prev => [...prev, { sender: 'agent', text: data.message }]);
         } else if (data.status === 'blocked') {
           setBlocked(true);
           setMessages(prev => [...prev, { sender: 'system', text: data.message }]);
+        } else {
+          // Standard JSON completion response
+          const reply = data.response || data.message || data.content || '';
+          if (reply) {
+            setMessages(prev => [...prev, { sender: 'agent', text: reply }]);
+          } else {
+            setMessages(prev => [...prev, { sender: 'agent', text: 'No response received from agent.' }]);
+          }
         }
         setLoading(false);
         return;
@@ -705,10 +731,12 @@ export default function App() {
           {messages.map((msg, i) => (
             <div key={i} className={`message-row ${msg.sender === 'user' ? 'user' : 'agent'}`}>
               {msg.sender === 'system' ? (
-                <div className="chat-bubble system">{msg.text}</div>
+                <div className="chat-bubble system">{typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text)}</div>
               ) : (
                 <div className={`chat-bubble ${msg.sender === 'user' ? 'user' : 'agent'}`}>
-                  {msg.sender === 'user' ? msg.text : parseMarkdown(msg.text)}
+                  {msg.sender === 'user' 
+                    ? (typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text))
+                    : parseMarkdown(msg.text)}
                 </div>
               )}
             </div>

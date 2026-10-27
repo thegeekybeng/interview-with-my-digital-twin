@@ -42,6 +42,7 @@ class OTPVerify(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: str = ""
 
 class RevalidateRequest(BaseModel):
     ip_address: str
