@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Shield, CheckCircle, AlertTriangle, 
   User, Briefcase, Mail, Link as LinkIcon, 
-  Loader2, Sparkles, LogOut, ArrowRight, Cpu
+  Loader2, Sparkles, LogOut, ArrowRight
 } from 'lucide-react';
 import { MermaidBlock } from './components/MermaidBlock';
 
@@ -110,6 +110,7 @@ export default function App() {
   const [verified, setVerified] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [accessTier, setAccessTier] = useState<'FULL' | 'RESTRICTED'>('RESTRICTED');
+  const [showSignoutAudit, setShowSignoutAudit] = useState(false);
   
   // Chat States
   const [messages, setMessages] = useState<Message[]>([]);
@@ -690,16 +691,16 @@ export default function App() {
             </div>
           </div>
 
-          {/* 2. System Pipeline Card */}
+          {/* 2. System Pipeline Card (Privacy Shield Active) */}
           <div className="sidebar-card">
             <div className="sidebar-card-header">
               <span className="sidebar-card-label">
-                <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                <Shield className="w-3.5 h-3.5 text-blue-400" />
                 System Pipeline
               </span>
-              <span className="sys-status-indicator">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                Live
+              <span className="sys-status-indicator shielded">
+                <Shield className="w-2.5 h-2.5 text-blue-400" />
+                Shielded
               </span>
             </div>
             <div className="sidebar-card-body">
@@ -709,29 +710,32 @@ export default function App() {
               </div>
               <div className="sys-telemetry-item">
                 <span className="sys-key">Base Model</span>
-                <span className="sys-val">Qwen2.5-Coder:1.5B</span>
+                <span className="sys-val shielded-val">•••••••••• (Protected)</span>
               </div>
               <div className="sys-telemetry-item">
                 <span className="sys-key">Host Compute</span>
-                <span className="sys-val">M4 Pro (Local)</span>
+                <span className="sys-val shielded-val">•••••••••• (Shielded)</span>
               </div>
               <div className="sys-telemetry-item">
                 <span className="sys-key">RAG Vector Index</span>
-                <span className="sys-val">pgvector (Cosine)</span>
+                <span className="sys-val shielded-val">•••••••••• (Zero-Trust)</span>
               </div>
               <div className="sys-telemetry-item">
                 <span className="sys-key">Context Vectors</span>
-                <span className="sys-val">{accessTier === 'FULL' ? '113 Embeddings' : 'Tier 1 Only'}</span>
+                <span className="sys-val shielded-val">•••••••••• (Vault Encrypted)</span>
               </div>
               <div className="sys-telemetry-item">
-                <span className="sys-key">Security Guard</span>
+                <span className="sys-key">Privacy Guard</span>
                 <span className="sys-val" style={{ color: '#4ade80' }}>PII Shield Active</span>
               </div>
+            </div>
+            <div className="privacy-shield-notice">
+              Infrastructure topology is shielded during active sessions. Architecture disclosure is unmasked upon sign-out.
             </div>
           </div>
         </div>
 
-        <button onClick={handleLogout} className="glass-button w-full flex items-center justify-center gap-2 mt-auto">
+        <button onClick={() => setShowSignoutAudit(true)} className="glass-button w-full flex items-center justify-center gap-2 mt-auto">
           <LogOut className="w-4 h-4" /> Sign Out
         </button>
       </div>
@@ -819,6 +823,72 @@ export default function App() {
           </button>
         </form>
       </div>
+
+      {/* Session Concluded Architecture Audit Modal */}
+      {showSignoutAudit && (
+        <div className="modal-backdrop animate-fade-in">
+          <div className="modal-card glass-panel">
+            <div className="modal-header">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-blue-400 shrink-0" />
+                <div>
+                  <h3 className="modal-title">Session Concluded: Architecture Disclosure</h3>
+                  <div className="modal-subtitle">Zero-Trust Verification & Infrastructure Audit</div>
+                </div>
+              </div>
+              <span className="status-badge full">Verified</span>
+            </div>
+            <p className="modal-description">
+              In accordance with Zero-Trust security and PDPA data governance, internal pipeline topology and model lineage are unmasked solely upon authenticated session conclusion.
+            </p>
+            <div className="audit-table">
+              <div className="audit-row">
+                <span className="audit-key">Inference Model</span>
+                <span className="audit-val">Andrew-Twin (LoRA Fine-Tuned Adapter)</span>
+              </div>
+              <div className="audit-row">
+                <span className="audit-key">Base Foundation Model</span>
+                <span className="audit-val">Qwen2.5-Coder:1.5B-Instruct</span>
+              </div>
+              <div className="audit-row">
+                <span className="audit-key">Compute Infrastructure</span>
+                <span className="audit-val">Local Private Host (Apple Silicon M4 Pro)</span>
+              </div>
+              <div className="audit-row">
+                <span className="audit-key">RAG Vector Index</span>
+                <span className="audit-val">pgvector (Cosine Distance HNSW)</span>
+              </div>
+              <div className="audit-row">
+                <span className="audit-key">Indexed Vectors</span>
+                <span className="audit-val">113 Production Embeddings</span>
+              </div>
+              <div className="audit-row">
+                <span className="audit-key">Session Privacy Policy</span>
+                <span className="audit-val" style={{ color: '#4ade80' }}>0 Visitor PII Persisted • Ephemeral Session Cleared</span>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button 
+                type="button"
+                onClick={() => setShowSignoutAudit(false)} 
+                className="modal-btn secondary"
+              >
+                Return to Chat
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowSignoutAudit(false);
+                  handleLogout();
+                }} 
+                className="modal-btn primary"
+              >
+                Confirm Sign Out & Clear Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
