@@ -715,7 +715,7 @@ export default function App() {
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-xs font-semibold text-slate-400">Agent Online</span>
           </div>
-          <span className="text-xs font-mono text-slate-400">Qwen2.5-Coder:32B</span>
+          <span className="text-xs font-mono text-slate-400">Andrew-Digital-Twin-LORA</span>
         </div>
 
         {/* System Alert banner */}
