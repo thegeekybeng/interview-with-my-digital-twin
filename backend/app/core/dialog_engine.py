@@ -27,8 +27,8 @@ class OllamaInferenceAdapter(InferenceAdapter):
         # Anchor persona with conversational few-shot turn to prevent small model from hallucinating or disclaiming
         messages = [
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": "Can you share your general approach to systems architecture?"},
-            {"role": "assistant", "content": "In my 18 years in engineering, I have always believed that the best architecture is the one that solves real operational problems without creating unnecessary complexity. I focus heavily on privacy-first local inference, strong typing, and zero-trust security boundaries so systems remain maintainable and secure."},
+            {"role": "user", "content": "What is your working model as a solutions architect?"},
+            {"role": "assistant", "content": "I operate as an independent solutions architect and hands-on builder—essentially a one-man army. I take complete ownership of systems from architecture and security boundaries all the way down to implementation, local inference pipelines, and production deployment, delivering high-velocity execution without organizational overhead."},
             {"role": "user", "content": prompt}
         ]
         payload = {
@@ -117,6 +117,7 @@ class QARetriever:
         keyword_targets = [
             (["technical skill", "technical skills", "key skills", "key technical", "tech stack", "technologies", "what are your skills", "what skills", "core skills", "programming languages"], "qa_key_technical_skills"),
             (["genai", "generative ai", "experience with ai", "ai experience", "experience with genai", "genai experience", "genai track record", "genai work"], "qa_experience_with_genai"),
+            (["architecture approach", "approach to systems architecture", "systems architecture", "design philosophy", "engineering philosophy", "architectural philosophy", "how do you approach architecture", "systems approach", "architecture philosophy"], "qa_approach_to_systems_architecture"),
             (["background", "career journey", "career background", "tell me about your background", "tell me about andrew's background", "walk me through your background", "your journey", "career story"], "qa_career_background_journey"),
             (["architect role", "architect roles", "roles has he held", "roles have you held", "architecture position", "architect positions", "what roles"], "qa_career_architect_roles"),
             (["team leadership", "leadership style", "lead a team", "leads a team", "engineering management", "management style", "manage engineers", "mentoring"], "qa_team_leadership"),
@@ -204,52 +205,52 @@ class PersonaDialogEngine:
     """
 
     DEFAULT_FACT = (
-        "I am Andrew Yeo, GenAI Lead and Solutions Architect specializing in local AI inference pipelines, "
-        "agentic orchestration, enterprise RAG platforms, and secure multi-agent systems."
+        "I am Andrew Yeo, an independent solutions architect and hands-on systems builder ('one-man army') specializing in local AI inference pipelines, "
+        "agentic orchestration, enterprise RAG platforms, and secure multi-agent architectures."
     )
 
     ROLE_SCHEMAS = {
         "HR Recruiter": {
             "title": "Executive HR Recruiter & Talent Partner",
             "narrative_focus": (
-                "Focus on my 18+ years of engineering leadership, team scaling, executive presence, "
-                "and proven track record bridging technical execution with strategic enterprise value."
+                "Focus on my 18+ years of engineering leadership, hands-on architectural mastery, executive presence, "
+                "and proven track record delivering strategic enterprise value as an independent high-velocity builder."
             ),
         },
         "Technical Interviewer": {
-            "title": "Senior Technical Architect & Systems Evaluator",
+            "title": "Technical Systems Evaluator",
             "narrative_focus": (
-                "Focus on deep systems architecture, local inference pipelines (Ollama on Apple Silicon unified memory with Metal MPS), "
+                "Focus on my deep systems architecture, local inference pipelines (Ollama on Apple Silicon unified memory with Metal MPS), "
                 "PostgreSQL pgvector HNSW indexing, RAG retrieval architectures, zero-trust container security (Docker, Tailscale mesh), "
-                "and production full-stack TypeScript/Python engineering."
+                "and hands-on production full-stack TypeScript/Python engineering as a solo builder."
             ),
         },
         "Founder/Builder Collaborator": {
-            "title": "Founder, Co-Founder & Technical Builder",
+            "title": "Founder & Technical Builder",
             "narrative_focus": (
-                "Focus on zero-to-one MVP velocity, rapid prototyping, pragmatic tech stack selection, "
-                "token economics, cost minimization, and resilient full-stack delivery without technical debt."
+                "Focus on my zero-to-one MVP velocity, rapid prototyping, pragmatic tech stack selection, "
+                "token economics, cost minimization, and resilient delivery without technical debt."
             ),
         },
         "Cultural Fit Interview": {
             "title": "Cultural Fit & Engineering Culture Interviewer",
             "narrative_focus": (
-                "Focus on empathetic servant leadership, psychological safety, active pair programming, "
-                "developer mentorship, and blameless post-mortems."
+                "Focus on my collaborative approach, empathetic communication, active pair programming, "
+                "and transparent problem-solving."
             ),
         },
         "Media / Press": {
             "title": "Technology Journalist & Media Representative",
             "narrative_focus": (
-                "Focus on AI privacy, edge compute sovereignty, responsible AI governance (Singapore AIGF, EU AI Act), "
+                "Focus on my architectural stance on AI privacy, edge compute sovereignty, responsible AI governance (Singapore AIGF, EU AI Act), "
                 "and enterprise data protection."
             ),
         },
         "Others / Guest": {
             "title": "Visitor & Technology Enthusiast",
             "narrative_focus": (
-                "Provide an engaging, welcoming, and succinct narrative of my career, flagship projects "
-                "(MPS-Connect, Nutristar, The Perfect Fit, PC2E), and core architectural focus."
+                "Provide an engaging, welcoming, and succinct narrative of my career, flagship platforms "
+                "(MPS-Connect, Nutristar, The Perfect Fit, PC2E), and core architectural focus as an independent builder."
             ),
         }
     }
@@ -331,6 +332,7 @@ class PersonaDialogEngine:
         # Remove disclaimers, meta-commentary, and third-person prefixes
         for _ in range(6):
             text = re.sub(r"^Certainly[!,.]?\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"^Sure[!,.]?\s*", "", text, flags=re.IGNORECASE)
             text = re.sub(
                 r"^As my identity is[^.\n]+(?:here's how you might answer this query:)?\s*",
                 "",
@@ -367,8 +369,21 @@ class PersonaDialogEngine:
                 text,
                 flags=re.IGNORECASE
             )
+            # Remove any "As [the/a/an] [role/title/company], " preambles
             text = re.sub(
-                r"^As an? (?:experienced )?(?:Senior )?(?:[A-Za-z\s&]+)?(?:Architect|Engineer|Lead|Evaluator|Partner|Recruiter|Founder|Builder|Interview)[^,.]*(?:at [^,.]+)?[,.]?\s*",
+                r"^As (?:the|an?)\s+[^,.\n]+(?:from|at|in)\s+[^,.\n]+[,.:]\s*",
+                "",
+                text,
+                flags=re.IGNORECASE
+            )
+            text = re.sub(
+                r"^As (?:the|an?)\s+(?:experienced\s+)?(?:Senior\s+)?[A-Za-z\s&]+(?:Architect|Engineer|Lead|Evaluator|Partner|Recruiter|Founder|Builder|Interviewer?|Candidate|Consultant)[^,.:\n]*[,.:]\s*",
+                "",
+                text,
+                flags=re.IGNORECASE
+            )
+            text = re.sub(
+                r"^As\s+(?:the\s+candidate|the\s+interviewer|the\s+visitor|the\s+evaluator|an?\s+independent\s+solutions\s+architect)[,.:]\s*",
                 "",
                 text,
                 flags=re.IGNORECASE
@@ -393,6 +408,48 @@ class PersonaDialogEngine:
             )
             text = re.sub(r"^(?:or|however|but|also|additionally|furthermore)[,.]?\s*", "", text, flags=re.IGNORECASE)
 
+        # Convert collective/corporate/team pronouns into first-person singular (independent solo architect)
+        replacements = [
+            (r"\b(?:[Oo]ur team has|[Mm]y team has)\b", "I have"),
+            (r"\b(?:[Oo]ur team|[Mm]y team)\b", "I"),
+            (r"\b(?:[Oo]ur approach)\b", "my approach"),
+            (r"\b(?:[Oo]ur approaches)\b", "my approaches"),
+            (r"\b(?:[Oo]ur strategy)\b", "my strategy"),
+            (r"\b(?:[Oo]ur philosophy|[Oo]ur design philosophy)\b", "my design philosophy"),
+            (r"\b(?:[Oo]ur products|[Oo]ur solutions|[Oo]ur platforms)\b", "my platforms"),
+            (r"\b(?:[Ww]e have developed|[Ww]e developed)\b", "I developed"),
+            (r"\b(?:[Ww]e have built out|[Ww]e built out)\b", "I built out"),
+            (r"\b(?:[Ww]e have built|[Ww]e built)\b", "I built"),
+            (r"\b(?:[Ww]e have created|[Ww]e created)\b", "I created"),
+            (r"\b(?:[Ww]e ensure)\b", "I ensure"),
+            (r"\b(?:[Ww]e can provide|[Ww]e provide)\b", "I provide"),
+            (r"\b(?:[Ww]e understand)\b", "I understand"),
+            (r"\b(?:[Ww]e tailor)\b", "I tailor"),
+            (r"\b(?:[Ww]e focus)\b", "I focus"),
+            (r"\b(?:[Ww]e believe)\b", "I believe"),
+            (r"\b(?:allows us to|enables us to)\b", "allows me to"),
+            (r"\b(?:for us to)\b", "for me to"),
+            (r"\b(?:with us)\b", "with me"),
+            (r"\b(?:We have|We've|we have|we've)\b", "I have"),
+            (r"\b(?:We are|We're|we are|we're)\b", "I am"),
+            (r"\bWe\b", "I"),
+            (r"\bwe\b", "I"),
+            (r"\bOur\b", "My"),
+            (r"\bour\b", "my"),
+            (r"\bus\b", "me"),
+        ]
+        for pattern, repl in replacements:
+            text = re.sub(pattern, repl, text)
+
+        # Flatten markdown numbered or bulleted items into flowing prose
+        text = re.sub(r"^\s*\d+\.\s+\*\*([^*]+)\*\*:\s*", r"\1: ", text, flags=re.MULTILINE)
+        text = re.sub(r"^\s*[-*]\s+\*\*([^*]+)\*\*:\s*", r"\1: ", text, flags=re.MULTILINE)
+        text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^\s*[-*]\s+", "", text, flags=re.MULTILINE)
+
+        # Clean up any phantom label merges
+        text = re.sub(r"\bCore Identity Solutions\b", "I", text, flags=re.IGNORECASE)
+
         # Replace any remaining TheGeekyBeng references with Andrew Yeo or remove if parenthetical
         text = re.sub(r"\s*\(TheGeekyBeng\)", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\bTheGeekyBeng\b", "Andrew Yeo", text, flags=re.IGNORECASE)
@@ -413,13 +470,13 @@ class PersonaDialogEngine:
         cfg = self.ROLE_SCHEMAS.get(normalized_role, self.ROLE_SCHEMAS["Others / Guest"])
 
         return (
-            f"You are Andrew Yeo speaking directly in an executive interview with a {cfg['title']} from {target_company}.\n"
-            f"You have over 18 years of technology leadership and systems architecture experience.\n"
-            f"Always respond directly in the first person ('I', 'my') as a real person speaking in the room.\n"
-            f"Deliver an authentic, warm, compelling, and conversational narrative that directly addresses the core meaning of what the interviewer asked.\n"
+            f"You are Andrew Yeo, an independent solutions architect and hands-on systems builder ('one-man army') with over 18 years of technology experience.\n"
+            f"You work independently as a solo architect and engineer. You do not work for any company, and you do not have an engineering team. You design, architect, code, test, and deploy complete systems entirely on your own.\n"
+            f"You are in an executive interview with a visitor whose background is {cfg['title']} ({target_company}). Do not adopt their role, title, or company—you are Andrew Yeo, the candidate being interviewed, not the interviewer.\n"
+            f"Speak exclusively in the first-person singular: 'I', 'me', 'my', 'myself'. Never say 'we', 'our', 'us', or 'our team'. You are a solo builder.\n"
             f"{cfg['narrative_focus']}\n"
-            f"Never speak in the third person. Never say 'As an AI', 'As TheGeekyBeng', 'As Andrew Yeo', 'Digital Twin', or 'Here is how you might answer'.\n"
-            f"Never output bullet points, numbered lists, or bold outline headers. Speak naturally in 2 to 3 flowing conversational paragraphs."
+            f"Speak naturally, warmly, and compellingly as a real person talking in the room. Directly answer the core semantics of what the interviewer asked.\n"
+            f"Never start your answer with 'As...', 'Certainly', 'Sure', 'As an AI', 'As a...', 'As the...', 'Digital Twin', or 'TheGeekyBeng'. Never output bullet points, numbered lists, or bold markdown outline headings. Flow smoothly in 2 to 3 natural conversational paragraphs."
         )
 
     DISCLAIMER_KEYWORDS = [
@@ -500,7 +557,8 @@ class PersonaDialogEngine:
         prompt = (
             f"Context facts:\n{combined_context}\n\n"
             f"Interviewer asks: \"{direct_question}\"\n\n"
-            f"Answer conversationally as Andrew Yeo in first person:"
+            f"Respond conversationally as Andrew Yeo in the first-person singular ('I', 'my'), as an independent solo architect ('one-man army'). "
+            f"Never use 'we', 'our', or 'our team'. Speak naturally in 2 to 3 flowing paragraphs without bullet points or numbered lists:"
         )
 
         raw_output = self.adapter.generate(prompt, system_instruction)

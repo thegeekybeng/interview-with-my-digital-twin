@@ -49,6 +49,42 @@ def test_persona_dialog_engine_offline():
     assert "I don't have" not in fallback_output
     print("✓ Disclaimers fallback verified.")
 
+    # 4. Test stripping of role inversion preambles (e.g. As the Senior Technical Architect & Systems Evaluator from Corporate)
+    inversion_text = (
+        "As the Senior Technical Architect & Systems Evaluator from Corporate, I believe that my approach to systems architecture "
+        "should be centered around creating solutions that are both efficient and effective while also ensuring privacy and security."
+    )
+    cleaned_inversion = engine.clean_robotics(inversion_text)
+    assert "As the Senior Technical Architect" not in cleaned_inversion, f"Inversion preamble not stripped: {cleaned_inversion}"
+    assert "Corporate" not in cleaned_inversion, f"Corporate leaked in preamble: {cleaned_inversion}"
+    assert cleaned_inversion.startswith("I believe that my approach"), f"Cleaned output does not start with first-person: {cleaned_inversion}"
+    print("✓ Role inversion preamble stripping verified.")
+
+    # 5. Test conversion of collective/team pronouns into first-person singular solo builder
+    team_text = (
+        "One of the key principles behind our Agenic AI design philosophy is strong typing. "
+        "We ensure that all data flows through secure channels. Our team has experience working with customers. "
+        "This allows us to track the flow of data."
+    )
+    cleaned_team = engine.clean_robotics(team_text)
+    assert "our Agenic" not in cleaned_team, f"Collective 'our' not replaced: {cleaned_team}"
+    assert "We ensure" not in cleaned_team, f"Collective 'We' not replaced: {cleaned_team}"
+    assert "Our team" not in cleaned_team, f"Collective 'Our team' not replaced: {cleaned_team}"
+    assert "allows us to" not in cleaned_team, f"Collective 'us' not replaced: {cleaned_team}"
+    assert "my Agenic AI design philosophy" in cleaned_team
+    assert "I ensure" in cleaned_team
+    assert "I have experience" in cleaned_team
+    assert "allows me to" in cleaned_team
+    print("✓ Collective pronoun conversion to solo first-person verified.")
+
+    # 6. Test system instruction contains solo builder identity and prohibits collective language
+    sys_instruction = engine.build_system_instruction(role_type="Technical Interviewer", target_company="Corporate")
+    assert "independent solutions architect" in sys_instruction
+    assert "one-man army" in sys_instruction
+    assert "do not have an engineering team" in sys_instruction
+    assert "first-person singular" in sys_instruction
+    print("✓ System instruction solo builder identity verified.")
+
     print("All PersonaDialogEngine unit tests PASSED successfully!")
 
 
