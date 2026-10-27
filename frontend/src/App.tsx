@@ -123,7 +123,7 @@ export default function App() {
   } | null>(null);
 
   // API URL binding (routed via localhost locally, pointing to public tunnel in production)
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://api-twin.thegeekybeng.com' : 'http://localhost:8000');
 
   useEffect(() => {
     const fetchStats = async () => {
