@@ -1,465 +1,294 @@
-import random
-import uuid
-import smtplib
-from email.mime.text import MIMEText
-import datetime
-import requests
-import json
 import re
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse, JSONResponse
+import uuid
+import json
+import sqlite3
+import smtplib
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from pathlib import Path
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from ..core.config import settings
-from ..core.database import get_pg_conn, release_pg_conn
-from ..core.security import check_session_blocked, log_strike
-from ..core.semantic_validator import SemanticValidator
+from core.config import settings
+from core.security import (
+    init_security_db,
+    generate_otp,
+    is_corporate_domain,
+    check_ip_blocked,
+    record_violation,
+    sanitize_input,
+    DB_PATH
+)
+from core.dialog_engine import PersonaDialogEngine, QARetriever, OllamaInferenceAdapter
 
-router = APIRouter()
-validator = SemanticValidator()
+router = APIRouter(prefix="/api", tags=["Digital Twin API"])
+APP_DIR = Path(__file__).parent.parent.resolve()
+RAW_QA_FILE = APP_DIR / "data" / "digital_twin_raw_qa.json"
 
-class OTPRequest(BaseModel):
-    name: str
-    company: str
+# Deep Domain Engine Singleton
+dialog_engine = PersonaDialogEngine(
+    inference_adapter=OllamaInferenceAdapter(),
+    retriever=QARetriever(RAW_QA_FILE)
+)
+
+# Backward-compatibility shims
+retriever = dialog_engine.retriever
+clean_robotics = PersonaDialogEngine.clean_robotics
+
+
+def generate_llm_response(prompt: str, system_instruction: str) -> str:
+    """Shim delegating to dialog_engine's inference adapter."""
+    raw = dialog_engine.adapter.generate(prompt, system_instruction)
+    return dialog_engine.clean_robotics(raw)
+
+
+class OTPRequestSchema(BaseModel):
+    name: str = "Visitor"
+    company: str = "your organization"
     email: str
-    role: str = "Visitor"
-    role_type: str = ""
+    role_type: str = "HR Recruiter"
+    role: str = ""
     linkedin: str = ""
 
     def get_role(self) -> str:
-        return self.role_type or self.role or "Visitor"
+        return self.role_type or self.role or "HR Recruiter"
 
-class OTPVerify(BaseModel):
+
+class OTPVerifySchema(BaseModel):
     email: str
     otp_code: str
-    ip_address: str = "127.0.0.1"
-    name: str = "Visitor"
-    company: str = "Company"
-    role: str = "Others / Guest"
+    name: str = ""
+    company: str = ""
     role_type: str = ""
+    role: str = ""
 
-    def get_role(self) -> str:
-        return self.role_type or self.role or "Others / Guest"
 
-class ChatRequest(BaseModel):
-    message: str
+class ChatRequestSchema(BaseModel):
     session_id: str = ""
+    message: str
 
-class RevalidateRequest(BaseModel):
-    ip_address: str
+
+class AppealRequestSchema(BaseModel):
     real_name: str
     real_email: str
     contact_details: str
     reason: str
+    ip_address: str = ""
 
-def send_otp_email(to_email: str, name: str, otp: str):
-    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-        # If SMTP configs are not set, log/print it and skip sending to prevent crashes during tests
-        print(f"SMTP credentials missing. Deferring OTP email send to {to_email}. Code is: {otp}")
-        return
-        
-    msg = MIMEText(f"Hello {name},\n\nYour verification code to access Andrew Yeo's Digital Twin Interview Portal is: {otp}\n\nThis code will expire in 10 minutes.")
-    msg['Subject'] = "Andrew Yeo Digital Twin - Verification Code"
-    msg['From'] = settings.SMTP_USER
-    msg['To'] = to_email
 
-    try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, [to_email], msg.as_string())
-    except Exception as e:
-        print(f"Failed to send email via SMTP: {e}")
-        # We don't raise here to allow offline test assertions to succeed
-
-def send_lead_alert_email(visitor_name: str, company: str, email: str, project_scope: str):
-    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-        print("SMTP credentials missing. Deferring lead notification email.")
+def send_otp_email(recipient_email: str, otp_code: str):
+    """Sends verification OTP email if SMTP server credentials are configured in environment."""
+    if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
+        print(f"[SMTP Dispatch Notice]: Email credentials not set in .env. Generated OTP for {recipient_email}: {otp_code}")
         return False
-        
-    msg = MIMEText(
-        f"Hello Andrew,\n\nYou have received a new consulting/project inquiry from your Digital Twin portal:\n\n"
-        f"Name: {visitor_name}\n"
-        f"Company: {company}\n"
-        f"Email: {email}\n"
-        f"Project Scope: {project_scope}\n\n"
-        f"Please check your admin dashboard for full details."
-    )
-    msg['Subject'] = f"[Lead Alert] New consulting project request from {visitor_name}"
-    msg['From'] = settings.SMTP_USER
-    msg['To'] = settings.SMTP_USER  # Sends to yourself
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Your Digital Twin Verification Code: {otp_code}"
+        msg["From"] = settings.SENDER_EMAIL or settings.SMTP_USERNAME
+        msg["To"] = recipient_email
+
+        html_content = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; background-color: #0b0f19; color: #f8fafc; padding: 20px;">
+            <div style="max-width: 500px; margin: auto; background-color: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155;">
+              <h2 style="color: #06b6d4; text-align: center;">Andrew Yeo's Digital Twin</h2>
+              <p>Hello,</p>
+              <p>You requested access to interview Andrew Yeo's Digital Twin. Here is your 6-digit verification code:</p>
+              <div style="font-size: 28px; font-weight: bold; font-family: monospace; letter-spacing: 4px; text-align: center; color: #10b981; background: #0f172a; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                {otp_code}
+              </div>
+              <p style="font-size: 12px; color: #94a3b8; text-align: center;">This code will expire in {settings.OTP_EXPIRY_MINUTES} minutes. If you did not request this code, please ignore this email.</p>
+            </div>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(html_content, "html"))
+
+        with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
             server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, [settings.SMTP_USER], msg.as_string())
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.sendmail(msg["From"], recipient_email, msg.as_string())
+
+        print(f"[SMTP Dispatch Success]: Verification OTP sent to {recipient_email}")
         return True
     except Exception as e:
-        print(f"Failed to send lead alert via SMTP: {e}")
+        print(f"[SMTP Dispatch Failure]: Failed to send email to {recipient_email}: {e}")
         return False
 
-@router.post("/request_otp")
-async def request_otp(payload: OTPRequest):
-    otp = f"{random.randint(100000, 999999)}"
-    expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
-    
-    conn = get_pg_conn()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            """
-            INSERT INTO email_verifications (email, otp_code, expires_at, attempts)
-            VALUES (%s, %s, %s, 0)
-            ON CONFLICT (email) 
-            DO UPDATE SET otp_code = EXCLUDED.otp_code, expires_at = EXCLUDED.expires_at, attempts = 0
-            """,
-            (payload.email.lower(), otp, expires)
-        )
-        conn.commit()
-    finally:
-        cur.close()
-        release_pg_conn(conn)
 
-    # Dispatch email asynchronously/synchronously
-    send_otp_email(payload.email, payload.name, otp)
-    return {"status": "sent", "message": "Verification code dispatched."}
+@router.post("/request_otp")
+def request_otp(payload: OTPRequestSchema, request: Request):
+    init_security_db()
+    client_ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "127.0.0.1")
+    if check_ip_blocked(client_ip):
+        raise HTTPException(status_code=403, detail="Access denied. Your IP has been locked due to security violations.")
+
+    otp = generate_otp()
+    expires_at = (datetime.utcnow() + timedelta(minutes=settings.OTP_EXPIRY_MINUTES)).isoformat()
+    role_type = payload.get_role()
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT OR REPLACE INTO email_verifications (email, otp_code, expires_at, role_type, real_name, company_name, verified)
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+    """, (payload.email.lower(), otp, expires_at, role_type, payload.name, payload.company))
+    conn.commit()
+    conn.close()
+
+    send_otp_email(payload.email, otp)
+
+    return {
+        "status": "OTP_DISPATCHED",
+        "message": f"6-digit verification code sent to {payload.email}. Valid for {settings.OTP_EXPIRY_MINUTES} minutes."
+    }
+
 
 @router.post("/verify_otp")
-async def verify_otp(payload: OTPVerify):
-    conn = get_pg_conn()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT otp_code, expires_at FROM email_verifications WHERE email = %s", (payload.email.lower(),))
-        row = cur.fetchone()
+def verify_otp(payload: OTPVerifySchema, request: Request):
+    client_ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "127.0.0.1")
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
-        if not row or row[0] != payload.otp_code:
-            raise HTTPException(status_code=400, detail="Invalid verification code.")
+    cursor.execute("SELECT otp_code, expires_at, role_type, real_name, company_name FROM email_verifications WHERE email = ?", (payload.email.lower(),))
+    row = cursor.fetchone()
 
-        now = datetime.datetime.now(datetime.timezone.utc)
-        # Ensure timezone comparison matches
-        expires_at_val = row[1]
-        if isinstance(expires_at_val, str):
-            try:
-                expires_at_val = datetime.datetime.fromisoformat(expires_at_val.replace("Z", "+00:00"))
-            except ValueError:
-                expires_at_val = datetime.datetime.strptime(expires_at_val, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
-        if expires_at_val.tzinfo is None:
-            expires_at_val = expires_at_val.replace(tzinfo=datetime.timezone.utc)
-        if expires_at_val < now:
-            raise HTTPException(status_code=400, detail="Verification code has expired.")
-        
-        # Check if email domain is generic to determine tier
-        generic_domains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com"]
-        email_domain = payload.email.split("@")[-1].lower()
-        access_tier = "RESTRICTED" if email_domain in generic_domains else "FULL"
-        
-        session_id = str(uuid.uuid4())
-        
-        role_limits = {
-            "HR Recruiter": 15,
-            "Technical Interviewer": 30,
-            "Founder/Builder Collaborator": 40,
-            "Media / Press": 20,
-            "Cultural Fit Interview": 20,
-            "Others / Guest": 120
-        }
-        limit_minutes = role_limits.get(payload.role, 120)
-        session_expires_at = now + datetime.timedelta(minutes=limit_minutes)
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=400, detail="No pending OTP request found for this email.")
 
-        # Save the visitor details
-        cur.execute(
-            """
-            INSERT INTO visitors (session_id, email, full_name, company, role_type, access_tier, session_expires_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (session_id, payload.email.lower(), payload.name, payload.company, payload.role, access_tier, session_expires_at)
-        )
-        conn.commit()
-        return {"session_id": session_id, "access_tier": access_tier}
-    finally:
-        cur.close()
-        release_pg_conn(conn)
+    stored_otp = row[0]
+    expires_at = row[1]
+    role_type = payload.role_type or payload.role or (row[2] if len(row) > 2 and row[2] else "HR Recruiter")
+    visitor_name = payload.name or (row[3] if len(row) > 3 and row[3] else "Verified Visitor")
+    visitor_company = payload.company or (row[4] if len(row) > 4 and row[4] else "your organization")
+
+    if datetime.utcnow().isoformat() > expires_at:
+        conn.close()
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new verification code.")
+
+    if stored_otp != payload.otp_code:
+        conn.close()
+        strikes = record_violation(client_ip)
+        raise HTTPException(status_code=401, detail=f"Invalid OTP code. Strike {strikes}/{settings.MAX_STRIKES}.")
+
+    session_id = f"session_{uuid.uuid4().hex[:12]}"
+    tier = "FULL" if is_corporate_domain(payload.email) else "RESTRICTED"
+
+    cursor.execute("UPDATE email_verifications SET verified = 1 WHERE email = ?", (payload.email.lower(),))
+    cursor.execute("""
+    INSERT INTO visitors (session_id, ip_address, real_name, company_name, real_email, role_type, access_tier)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (session_id, client_ip, visitor_name, visitor_company, payload.email.lower(), role_type, tier))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "VERIFIED",
+        "session_id": session_id,
+        "role_type": role_type,
+        "access_tier": tier,
+        "message": f"Session established for role [{role_type}] with access tier [{tier}]."
+    }
+
 
 @router.post("/chat")
-async def chat(request: Request, payload: ChatRequest):
-    ip = request.headers.get("CF-Connecting-IP") or (request.client.host if request.client else "127.0.0.1")
-    session_id = request.headers.get("X-Session-ID")
-    
-    if not session_id:
-        raise HTTPException(status_code=401, detail="Session ID missing. Access Denied.")
+def chat_endpoint(payload: ChatRequestSchema, request: Request):
+    client_ip = request.headers.get("CF-Connecting-IP", request.client.host if request.client else "127.0.0.1")
+    if check_ip_blocked(client_ip):
+        raise HTTPException(status_code=403, detail="Session blocked. Revalidation appeal required.")
+
+    from core.guardrails import GuardrailPolicyEngine
+
+    valid, clean_msg = sanitize_input(payload.message)
+    if not valid:
+        strikes = record_violation(client_ip)
+        raise HTTPException(status_code=400, detail=f"Security alert: {clean_msg} (Strike {strikes}/{settings.MAX_STRIKES})")
+
+    active_session = payload.session_id or request.headers.get("X-Session-ID") or ""
+
+    # Retrieve session details from database
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT role_type, access_tier, company_name, real_name FROM visitors WHERE session_id = ?", (active_session,))
+    visitor = cursor.fetchone()
+
+    role_type = visitor[0] if visitor else "Others / Guest"
+    tier = visitor[1] if visitor else "RESTRICTED"
+    target_company = visitor[2] if (visitor and len(visitor) > 2 and visitor[2]) else "your organization"
+
+    # Evaluate Query against Guardrail Boundary Rules
+    is_allowed, category, refusal = GuardrailPolicyEngine.evaluate_query(clean_msg)
+    if not is_allowed:
+        conn.close()
+        if category == "JAILBREAK_AND_OVERRIDE":
+            strikes = record_violation(client_ip)
+            raise HTTPException(status_code=400, detail=f"Security Alert: {refusal} (Strike {strikes}/{settings.MAX_STRIKES})")
         
-    if check_session_blocked(ip, session_id):
-        raise HTTPException(status_code=403, detail="Access Denied: Your IP or Session has been blocked.")
-
-    # Fetch visitor profile from Postgres
-    conn_tracker = get_pg_conn()
-    cur_tracker = conn_tracker.cursor()
-    try:
-        cur_tracker.execute("SELECT full_name, company, email, access_tier, role_type, session_expires_at, questions_remaining FROM visitors WHERE session_id = %s", (session_id,))
-        visitor_row = cur_tracker.fetchone()
-        
-        if not visitor_row:
-            raise HTTPException(status_code=401, detail="Invalid Session ID.")
-
-        visitor_name, visitor_company, visitor_email, access_tier, visitor_role, session_expires_at, questions_remaining = visitor_row
-
-        # 1a. Semantic Input Intent Guardrail Check
-        role_mapping = {
-            "HR Recruiter": "hr",
-            "Technical Interviewer": "technical",
-            "Founder/Builder Collaborator": "founder",
-            "Media / Press": "media",
-            "Cultural Fit Interview": "cultural"
+        return {
+            "session_id": active_session,
+            "role_type": role_type,
+            "access_tier": tier,
+            "response": refusal
         }
-        role_type = role_mapping.get(visitor_role, "global")
 
-        is_safe, refusal = await validator.validate_input_intent(
-            role_type=role_type,
-            query=payload.message
-        )
-        if not is_safe:
-            raise HTTPException(status_code=400, detail=refusal)
-
-        # 1. Enforce time limits based on session_expires_at
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if isinstance(session_expires_at, str):
-            try:
-                session_expires_at = datetime.datetime.fromisoformat(session_expires_at.replace("Z", "+00:00"))
-            except ValueError:
-                session_expires_at = datetime.datetime.strptime(session_expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
-        if session_expires_at.tzinfo is None:
-            session_expires_at = session_expires_at.replace(tzinfo=datetime.timezone.utc)
-        if session_expires_at < now:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access Denied: Your session has expired. The max time limit for {visitor_role} has been reached."
-            )
-
-        # 2. Enforce turn limits for Guest/Others role (max 3 questions)
-        if visitor_role not in ["HR Recruiter", "Technical Interviewer", "Founder/Builder Collaborator", "Media / Press", "Cultural Fit Interview"]:
-            if questions_remaining <= 0:
-                raise HTTPException(
-                    status_code=403, 
-                    detail="Access Denied: You have reached the maximum limit of 3 queries allowed for Guest access."
-                )
-
-        # Log user query in chat_logs
-        cur_tracker.execute(
-            "INSERT INTO chat_logs (session_id, role, content) VALUES (%s, 'user', %s)",
-            (session_id, payload.message)
-        )
-        # Decrement questions remaining if applicable
-        if visitor_role not in ["HR Recruiter", "Technical Interviewer", "Founder/Builder Collaborator", "Media / Press", "Cultural Fit Interview"]:
-            cur_tracker.execute("UPDATE visitors SET questions_remaining = questions_remaining - 1 WHERE session_id = %s", (session_id,))
-            
-        conn_tracker.commit()
-    finally:
-        cur_tracker.close()
-        release_pg_conn(conn_tracker)
-
-    # 2. Check for security violation overrides
-    violation_response = log_strike(ip, payload.message)
-    if violation_response:
-        return violation_response
-
-    # 3. Check for consulting project keywords
-    consulting_keywords = [r"consult", r"freelance", r"build", r"contract", r"hire\s+you", r"custom\s+app", r"project"]
-    is_consulting = any(re.search(pattern, payload.message, re.IGNORECASE) for pattern in consulting_keywords)
-    
-    if is_consulting:
-        conn_leads = get_pg_conn()
-        cur_leads = conn_leads.cursor()
-        try:
-            # Save consulting leads record
-            cur_leads.execute(
-                """
-                INSERT INTO consulting_leads (session_id, company, budget_range, scope_summary, notified_via_smtp)
-                VALUES (%s, %s, 'Negotiable', %s, FALSE) RETURNING id
-                """,
-                (session_id, visitor_company, payload.message)
-            )
-            lead_id = cur_leads.fetchone()[0]
-            conn_leads.commit()
-            
-            # Send alert email to Andrew
-            alert_sent = send_lead_alert_email(visitor_name, visitor_company, visitor_email, payload.message)
-            if alert_sent:
-                cur_leads.execute("UPDATE consulting_leads SET notified_via_smtp = TRUE WHERE id = %s", (lead_id,))
-                conn_leads.commit()
-        finally:
-            cur_leads.close()
-            release_pg_conn(conn_leads)
-
-    # 4. Cosine RAG Search (Skip if RESTRICTED tier)
-    context = "RAG search results skipped under RESTRICTED access tier."
-    if access_tier == "FULL":
-        try:
-            emb_res = requests.post(f"{settings.OLLAMA_URL}/api/embeddings", json={"model": "nomic-embed-text", "prompt": payload.message})
-            emb_res.raise_for_status()
-            query_vector = emb_res.json()["embedding"]
-        except Exception as e:
-            # For offline testing, skip embedding error to proceed smoothly
-            query_vector = None
-            print(f"Skipping embeddings post query: {e}")
-
-        if query_vector:
-            try:
-                conn = get_pg_conn()
-                cur = conn.cursor()
-                cur.execute(
-                    """
-                    SELECT content, repo_name, file_path 
-                    FROM repository_embeddings 
-                    ORDER BY embedding <=> %s::vector 
-                    LIMIT 5;
-                    """,
-                    (query_vector,)
-                )
-                rows = cur.fetchall()
-                cur.close()
-                release_pg_conn(conn)
-                context = "\n\n".join([f"Repo: {r[1]} | File: {r[2]}\nCode:\n{r[0]}" for r in rows])
-            except Exception as e:
-                print(f"Database query error during RAG retrieval: {e}")
-
-    # 5. Stream LLM completions via event generator
-    def event_generator():
-        role_instruction = ""
-        if visitor_role == "Media / Press":
-            role_instruction = (
-                "You are representing Andrew Yeo to the media/press. "
-                "Structure your responses in a highly media-savvy, professional, "
-                "diplomatic, and politically correct manner. "
-                "Ensure statements are positive, objective, and represent "
-                "solutions architecture leadership appropriately. "
-            )
-        elif visitor_role == "HR Recruiter":
-            role_instruction = (
-                "You are speaking to an HR Recruiter. "
-                "Focus on Andrew's employment background, years of experience, "
-                "collaborative skills, and overall fit for technical roles. "
-            )
-        elif visitor_role == "Technical Interviewer":
-            role_instruction = (
-                "You are speaking to a Technical Interviewer. "
-                "Provide highly technical, precise, and structural answers. "
-                "Reference design patterns, algorithms, and deep systems architecture details. "
-            )
-        elif visitor_role == "Founder/Builder Collaborator":
-            role_instruction = (
-                "You are speaking to a Founder or Builder Collaborator. "
-                "Focus on product design, architecture scalability, MVP velocity, "
-                "and custom engineering capabilities. "
-            )
-        elif visitor_role == "Cultural Fit Interview":
-            role_instruction = (
-                "You are speaking to a Cultural Fit Interviewer. "
-                "Highlight Andrew's collaborative mindset, team player values, "
-                "empathetic leadership approach, adaptability to company cultures, "
-                "and proactive problem-solving attitude in cross-functional squads. "
-            )
-
-
-        # Select model dynamically based on role type
-        if visitor_role in ["Technical Interviewer", "Founder/Builder Collaborator"]:
-            model_name = "qwen2.5-coder:32b"
-            model_temp = 0.1
-        else:
-            model_name = "llama3.1:8b"
-            model_temp = 0.2
-
-        diagram_instruction = (
-            "When explaining multi-step processes, network routing, or system component topologies, "
-            "include a clean Mermaid.js diagram inside a ```mermaid``` code block before or after the textual explanation. "
-            "Keep node labels concise."
-        )
-
-        prompt = (
-            f"System: You are speaking with {visitor_name} from {visitor_company} (Role: {visitor_role}). "
-            f"Access Tier: {access_tier}. {role_instruction} {diagram_instruction} "
-            f"If they request consulting or building, explain your custom architecting skills and invite them to schedule a call. "
-            f"Code context:\n{context}\n\nUser: {payload.message}"
-        )
-        url = f"{settings.OLLAMA_URL}/api/chat"
-        data = {
-            "model": model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": True,
-            "options": {
-                "temperature": model_temp,
-                "num_predict": 512
-            }
-        }
-        full_agent_response = []
-        try:
-            res = requests.post(url, json=data, stream=True)
-            for chunk in res.iter_lines():
-                if chunk:
-                    decoded = chunk.decode("utf-8")
-                    yield decoded + "\n"
-                    # Try parsing streaming content to save to transcript
-                    try:
-                        parsed = json.loads(decoded)
-                        content = parsed.get("message", {}).get("content", "")
-                        if content:
-                            full_agent_response.append(content)
-                    except Exception:
-                        pass
-        except Exception as e:
-            err_msg = f"Inference engine connectivity issue: {e}"
-            yield json.dumps({"error": err_msg}) + "\n"
-            full_agent_response.append(err_msg)
-
-        # After streaming is complete, log agent response in database
-        agent_message = "".join(full_agent_response)
-        conn_log = get_pg_conn()
-        cur_log = conn_log.cursor()
-        try:
-            cur_log.execute(
-                "INSERT INTO chat_logs (session_id, role, content) VALUES (%s, 'assistant', %s)",
-                (session_id, agent_message)
-            )
-            conn_log.commit()
-        finally:
-            cur_log.close()
-            release_pg_conn(conn_log)
-
-        # Set the agent message for the background task audit
-        audit_data["agent_message"] = agent_message
-
-    async def run_tone_audit_task(role_type_val: str, data: dict):
-        try:
-            msg = data.get("agent_message", "")
-            if msg:
-                ok, status = await validator.validate_output_tone(role_type_val, msg)
-                print(f"Audit Tone Guardrail: Role={role_type_val} | Status={status}")
-        except Exception as audit_err:
-            print(f"Audit Tone Guardrail Error: {audit_err}")
-
-    audit_data = {"agent_message": ""}
-    background_tasks = BackgroundTasks()
-    background_tasks.add_task(run_tone_audit_task, role_type, audit_data)
-
-    return StreamingResponse(
-        event_generator(), 
-        media_type="text/event-stream", 
-        background=background_tasks
-    )
-
-@router.post("/revalidate")
-async def revalidate(payload: RevalidateRequest):
-    conn = get_pg_conn()
-    cur = conn.cursor()
+    # Log user query in chat_logs
     try:
-        cur.execute(
-            """
-            INSERT INTO revalidation_appeals (ip_address, real_name, real_email, contact_details, reason)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (payload.ip_address, payload.real_name, payload.real_email, payload.contact_details, payload.reason)
+        cursor.execute(
+            "INSERT INTO chat_logs (session_id, sender, message) VALUES (?, 'user', ?)",
+            (active_session, clean_msg)
         )
         conn.commit()
-        return JSONResponse(status_code=200, content={"status": "submitted", "message": "Appeal submitted. Your details will be verified manually."})
+    except Exception as log_err:
+        pass
+
+    # Delegate full conversational RAG generation to PersonaDialogEngine
+    final_sanitized_response = dialog_engine.converse(
+        clean_msg=clean_msg,
+        role_type=role_type,
+        target_company=target_company,
+        access_tier=tier
+    )
+
+    # Log agent response in chat_logs
+    try:
+        cursor.execute(
+            "INSERT INTO chat_logs (session_id, sender, message) VALUES (?, 'assistant', ?)",
+            (active_session, final_sanitized_response)
+        )
+        conn.commit()
+    except Exception as log_err:
+        pass
     finally:
-        cur.close()
-        release_pg_conn(conn)
+        conn.close()
+
+    return {
+        "session_id": active_session,
+        "role_type": role_type,
+        "access_tier": tier,
+        "response": final_sanitized_response
+    }
+
+
+@router.post("/revalidate")
+def submit_appeal(payload: AppealRequestSchema, request: Request):
+    client_ip = payload.ip_address or request.headers.get("CF-Connecting-IP", request.client.host if request.client else "127.0.0.1")
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO revalidation_appeals (ip_address, real_name, real_email, contact_details, reason) VALUES (?, ?, ?, ?, ?)",
+            (client_ip, payload.real_name, payload.real_email, payload.contact_details, payload.reason)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[Appeal Error]: {e}")
+    finally:
+        conn.close()
+
+    return {
+        "status": "APPEAL_SUBMITTED",
+        "message": "Revalidation appeal received. Our administrative team will review your corporate credentials."
+    }

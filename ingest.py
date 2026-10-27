@@ -11,18 +11,25 @@ EMBEDDING_MODEL = "nomic-embed-text"
 # File extensions to parse
 VALID_EXTENSIONS = {
     ".py", ".ts", ".tsx", ".js", ".jsx", ".html", ".css", 
-    ".json", ".md", ".yml", ".yaml", ".sql", ".sh"
+    ".json", ".md", ".yml", ".yaml", ".sql", ".sh", ".prisma", ".jsonc"
+}
+
+# Standalone filenames to parse regardless of extension
+VALID_FILENAMES = {
+    "Dockerfile", "Makefile", "docker-compose.yml", "docker-compose.example.yml", 
+    ".env.example", "package.json", "tsconfig.json", "schema.prisma"
 }
 
 # Directories to completely skip
 IGNORE_DIRS = {
-    "node_modules", "dist", "build", "venv", ".venv", 
-    ".git", ".pytest_cache", "__pycache__", "out", "target"
+    "node_modules", "dist", "build", "venv", ".venv", ".venv-filter",
+    ".git", ".pytest_cache", "__pycache__", "out", "target", ".next", ".cache"
 }
 
 # Specific files to ignore
 IGNORE_FILES = {
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", ".DS_Store"
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", ".DS_Store",
+    "tsconfig.tsbuildinfo"
 }
 
 def get_embedding(text):
@@ -42,7 +49,7 @@ def get_embedding(text):
             if "embeddings" in data and len(data["embeddings"]) > 0:
                 return data["embeddings"][0]
     except Exception as e:
-        print(f"DEBUG: /api/embed failed, trying legacy fallback: {e}")
+        pass
 
     # 2. Try legacy /api/embeddings fallback
     try:
@@ -93,11 +100,11 @@ def scan_and_ingest(repo_path, repo_name):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
         
         for file in files:
-            if file in IGNORE_FILES or file.startswith("._"):
+            if file in IGNORE_FILES or file.startswith("._") or file.endswith(".map") or file.endswith(".db"):
                 continue
                 
             _, ext = os.path.splitext(file)
-            if ext not in VALID_EXTENSIONS:
+            if ext not in VALID_EXTENSIONS and file not in VALID_FILENAMES:
                 continue
                 
             file_path = os.path.join(root, file)
@@ -115,13 +122,6 @@ def scan_and_ingest(repo_path, repo_name):
                 
             print(f"Processing: {rel_path}...")
             chunks = chunk_text(content)
-            
-            doc_type = "code"
-            normalized_rel_path = rel_path.replace("\\", "/").lower()
-            if "adr" in normalized_rel_path or "decision" in normalized_rel_path:
-                doc_type = "adr"
-            elif "resume" in normalized_rel_path or "experience" in normalized_rel_path:
-                doc_type = "resume"
 
             for idx, chunk in enumerate(chunks):
                 vector = get_embedding(chunk)
@@ -134,10 +134,10 @@ def scan_and_ingest(repo_path, repo_name):
                 
                 cur.execute(
                     """
-                    INSERT INTO repository_embeddings (doc_type, repo_name, file_path, chunk_index, content, embedding)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO repository_embeddings (repo_name, file_path, chunk_index, content, embedding)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (doc_type, repo_name, rel_path, idx, chunk, vector_str)
+                    (repo_name, rel_path, idx, chunk, vector_str)
                 )
                 total_chunks += 1
             
