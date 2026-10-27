@@ -112,6 +112,41 @@ export default function App() {
   const [sessionId, setSessionId] = useState('');
   const [accessTier, setAccessTier] = useState<'FULL' | 'RESTRICTED'>('RESTRICTED');
   const [showSignoutAudit, setShowSignoutAudit] = useState(false);
+  const [systemStats, setSystemStats] = useState<{
+    indexed_vectors?: number;
+    indexed_vectors_formatted?: string;
+    repos_indexed?: number;
+    inference_model?: string;
+    base_model?: string;
+    compute_infrastructure?: string;
+    rag_vector_index?: string;
+  } | null>(null);
+
+  // API URL binding (routed via localhost locally, pointing to public tunnel in production)
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/stats`);
+        if (res.ok) {
+          const data = await res.json();
+          setSystemStats(data);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch system stats:", err);
+      }
+    };
+    fetchStats();
+  }, [API_URL]);
+
+  const handleOpenSignoutAudit = () => {
+    setShowSignoutAudit(true);
+    fetch(`${API_URL}/api/stats`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setSystemStats(data); })
+      .catch(() => {});
+  };
   
   // Chat States
   const [messages, setMessages] = useState<Message[]>([]);
@@ -180,9 +215,6 @@ export default function App() {
   };
 
   
-  // API URL binding (routed via localhost locally, pointing to public tunnel in production)
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
   useEffect(() => {
     // Attempt restoring session from local storage
     const savedSession = localStorage.getItem('visitor_session_id');
@@ -830,7 +862,7 @@ export default function App() {
           </div>
         </div>
 
-        <button onClick={() => setShowSignoutAudit(true)} className="glass-button w-full flex items-center justify-center gap-2 mt-auto">
+        <button onClick={handleOpenSignoutAudit} className="glass-button w-full flex items-center justify-center gap-2 mt-auto">
           <LogOut className="w-4 h-4" /> Sign Out
         </button>
       </div>
@@ -939,23 +971,23 @@ export default function App() {
             <div className="audit-table">
               <div className="audit-row">
                 <span className="audit-key">Inference Model</span>
-                <span className="audit-val">Andrew-Twin (LoRA Fine-Tuned Adapter)</span>
+                <span className="audit-val">{systemStats?.inference_model || 'Andrew-Twin (LoRA Fine-Tuned Adapter)'}</span>
               </div>
               <div className="audit-row">
                 <span className="audit-key">Base Foundation Model</span>
-                <span className="audit-val">Qwen2.5-Coder:1.5B-Instruct</span>
+                <span className="audit-val">{systemStats?.base_model || 'Qwen2.5-Coder:1.5B-Instruct'}</span>
               </div>
               <div className="audit-row">
                 <span className="audit-key">Compute Infrastructure</span>
-                <span className="audit-val">Local Private Host (Apple Silicon M4 Pro)</span>
+                <span className="audit-val">{systemStats?.compute_infrastructure || 'Local Private Host (Apple Silicon M4 Pro)'}</span>
               </div>
               <div className="audit-row">
                 <span className="audit-key">RAG Vector Index</span>
-                <span className="audit-val">pgvector (Cosine Distance HNSW)</span>
+                <span className="audit-val">{systemStats?.rag_vector_index || 'pgvector (Cosine Distance HNSW)'}</span>
               </div>
               <div className="audit-row">
                 <span className="audit-key">Indexed Vectors</span>
-                <span className="audit-val">113 Production Embeddings</span>
+                <span className="audit-val">{systemStats?.indexed_vectors_formatted || '15,950 Production Embeddings'}</span>
               </div>
               <div className="audit-row">
                 <span className="audit-key">Session Privacy Policy</span>

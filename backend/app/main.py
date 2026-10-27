@@ -21,7 +21,7 @@ def startup():
 
 app.mount("/mcp", mcp.http_app(transport="sse"))
 
-app.include_router(chat.router, prefix="/api")
+app.include_router(chat.router)
 
 @app.get("/api/health")
 def health():
